@@ -1,6 +1,6 @@
-# Poloidal Flow Analysis for W7-X ABES
+# Wendelstein 7-X ABES Poloidal Flow Analysis
 
-A Python package for signal processing and cross-correlation analysis of Alkali Beam Emission Spectroscopy (ABES) data from the Wendelstein 7-X stellarator to calculate poloidal flow velocities.
+A Python package for data processing and cross-correlation analysis of W7-X ABES diagnostic data to calculate poloidal flow velocity profiles.
 
 ## Overview
 
