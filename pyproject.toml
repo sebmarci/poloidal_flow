@@ -1,0 +1,15 @@
+[project]
+name = "poloidal_flow"
+version = "0.1.0"
+description = "Signal processing and analysis algorithms for the calculation of poloidal flows via the W7X ABES diagnostic"
+readme = "README.md"
+
+[build-system]
+requires = ["hatchling >= 1.26"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.sdist]
+include = ["src/poloidal_flow"]
+
+license = "MIT"
+license-files = ["LICENSE*"]

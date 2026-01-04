@@ -1,0 +1,26 @@
+# Python cache
+__pycache__
+
+# Data products
+*.pkl
+*.txt
+*.cal
+
+# Configs
+*.cfg
+
+# Plots & PDFs
+*.pdf
+*.png
+*.jpg
+*.jpeg
+
+# Notebooks (may commit in the future)
+notebooks
+
+# Code snippets 
+code_snippets
+
+# Claude
+CLAUDE.md
+claude_context/
