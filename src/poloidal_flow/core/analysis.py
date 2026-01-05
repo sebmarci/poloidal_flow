@@ -102,7 +102,7 @@ class CorrelationAnalysis:
         )
         
         ccf_sliced = ccf.slice_data(
-            slicing = {'Time lag': flap.Intervals(-1e-4, 1.2e-4)}, # TODO this needs to be adjusted if the chop freq is different !!!
+            slicing = {'Time lag': flap.Intervals(*self.config.xcorr_time_lag_interval)},
         )
         
         return ccf_sliced

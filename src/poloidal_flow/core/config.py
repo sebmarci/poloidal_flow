@@ -64,6 +64,10 @@ class CorrelationConfig:
     xcorr_window : float, optional
         Duration of time window for computing cross-correlation in seconds.
         Default is 0.01 (10 ms).
+    xcorr_result_interval: float, optional
+        The resulting cross-correlation function is filtered to this time lag interval.
+        Default is (-100us, 120us). This should be set in accordance with the chopping
+        and deflection frequency of the ABES beam.
     xcorr_resolution : float, optional
         Time resolution for cross-correlation function in seconds.
         Default is 1e-6 (1 microsecond).
@@ -76,7 +80,8 @@ class CorrelationConfig:
     """
 
     xcorr_fitting_method: str
-    xcorr_window: Tuple[float, float] = 0.01  # seconds
+    xcorr_window: float = 0.01  # seconds
+    xcorr_time_lag_interval: Tuple[float, float] = (-1e-4, 1.2e-4)
     xcorr_resolution: float = 1e-6  # seconds
     xcorr_interval: int = 1
     xcorr_normalize: bool = True
