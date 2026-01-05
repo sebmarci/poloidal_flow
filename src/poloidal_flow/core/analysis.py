@@ -49,12 +49,6 @@ class CorrelationAnalysis:
     ------
     ValueError
         If xcorr_fitting_method is not 'gaussian' or 'cubic_spline'.
-
-    Examples
-    --------
-    >>> config = CorrelationConfig(xcorr_fitting_method='gaussian')
-    >>> analyzer = CorrelationAnalysis(data_defl0, data_defl1, config)
-    >>> tau_vals, corr_vals = analyzer.get_max_time_lag(times, channels)
     """
     
     def __init__(self, data_defl0: flap.DataObject, data_defl1: flap.DataObject, config: CorrelationConfig):
@@ -94,7 +88,7 @@ class CorrelationAnalysis:
         -----
         Uses FLAP's ccf method to compute normalized cross-correlation.
         The time lag range is currently hardcoded but should match the
-        chopper frequency being used.
+        beam chop frequency being used.
         """
         
         ccf = data0.ccf(
@@ -165,8 +159,7 @@ class CorrelationAnalysis:
         Notes
         -----
         Uses scipy.interpolate.CubicSpline followed by scipy.optimize.minimize
-        to find the maximum of the interpolated function. Initial guess for
-        optimization is 0 microseconds.
+        to find the maximum of the interpolated function.
         """
                         
         time_lags = ccf.coordinate('Time lag')[0] * 1e6  

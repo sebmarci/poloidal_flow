@@ -38,16 +38,6 @@ class ABESConfig:
     pickle_folder : str, optional
         Path to folder for saving/loading pickled data.
         Default is 'pickled_shot_data'.
-
-    Examples
-    --------
-    >>> config = ABESConfig(
-    ...     exp_id='20250409.046',
-    ...     time_range=(0.5, 1.5),
-    ...     channels=list(range(1, 21))
-    ... )
-    >>> config.bandpass_range
-    (2000.0, 6000.0)
     """
 
     exp_id: str
@@ -58,7 +48,6 @@ class ABESConfig:
     bandpass_type: Optional[str] = 'Elliptic'
     bandpass_range: Optional[Tuple[float, float]] = (2e3, 6e3)  # Hz
     interpolation_method: str = 'cubic'
-
     pickle_folder: str = 'pickled_shot_data'
 
 @dataclass
@@ -84,16 +73,6 @@ class CorrelationConfig:
     xcorr_normalize : bool, optional
         Whether to normalize the cross-correlation function.
         Default is True.
-
-    Examples
-    --------
-    >>> config = CorrelationConfig(
-    ...     xcorr_fitting_method='gaussian',
-    ...     xcorr_window=0.025,
-    ...     xcorr_resolution=0.5e-6
-    ... )
-    >>> config.xcorr_normalize
-    True
     """
 
     xcorr_fitting_method: str
