@@ -13,7 +13,7 @@ import matplotlib.pyplot as plt
 from .config import CorrelationConfig
 
 def gaussian_func(x, x0, sigma, a, b):
-    return a * np.exp((x-x0)**2 / (2*sigma**2)) + b
+    return a * np.exp(-(x-x0)**2 / (2*sigma**2)) + b
 
 class CorrelationAnalysis:
     """
@@ -87,8 +87,6 @@ class CorrelationAnalysis:
         Notes
         -----
         Uses FLAP's ccf method to compute normalized cross-correlation.
-        The time lag range is currently hardcoded but should match the
-        beam chop frequency being used.
         """
         
         ccf = data0.ccf(

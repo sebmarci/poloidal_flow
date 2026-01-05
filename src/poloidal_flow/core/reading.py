@@ -7,7 +7,6 @@ import os
 import flap_w7x_abes
 import numpy as np
 import pickle
-from scipy.interpolate import interp1d
 from scipy.interpolate import CubicSpline
 from typing import List, Optional, Tuple
 from .config import ABESConfig
@@ -291,13 +290,6 @@ class ABESDataReader:
                 
             on_time = d_beam_on.coordinate('Time')[0]
             off_time = d_beam_off.coordinate('Time')[0]
-                
-            #off_interp = interp1d(
-            #    x = off_time,
-            #    y = d_beam_off.data,
-            #    kind = 'cubic',
-            #    bounds_error = False
-            #)
             
             off_interp = CubicSpline(off_time, d_beam_off.data)  
             backsub_data = d_beam_on.data - off_interp(on_time)
@@ -309,14 +301,8 @@ class ABESDataReader:
                                 
                 on_time = d_beam_on.coordinate('Time')[0][0]
                 off_time = d_beam_off.coordinate('Time')[0][0]
-                    
-                off_interp = interp1d(
-                    x = off_time,
-                    y = d_beam_off.data[i],
-                    kind = 'cubic',
-                    bounds_error = False
-                )
                 
+                off_interp = CubicSpline(off_time, d_beam_off.data[i])              
                 backsub_data[i] = d_beam_on.data[i] - off_interp(on_time)
                 
         tstart = on_time[0]
