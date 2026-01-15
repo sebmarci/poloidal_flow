@@ -121,6 +121,7 @@ class CCFPlotter:
                        label='Gaussian fit',
                        color=kwargs.get('color', 'C1'),
                        linewidth=kwargs.get('linewidth', 2))
+                title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
 
             elif method == 'spline':
                 tau_max, ccf_max, cs = self.analyzer.fit_cubic_spline(ccf)
