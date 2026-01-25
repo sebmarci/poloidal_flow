@@ -95,15 +95,13 @@ class CorrelationAnalysis:
             options = {
                 'Interval_n': self.config.xcorr_interval,
                 'Resolution': self.config.xcorr_resolution,
-                'Normalize': self.config.xcorr_normalize
+                'Normalize': self.config.xcorr_normalize,
+                'Range': list(self.config.xcorr_time_lag_interval),
+                'Trend removal': None
             }
         )
         
-        ccf_sliced = ccf.slice_data(
-            slicing = {'Time lag': flap.Intervals(*self.config.xcorr_time_lag_interval)},
-        )
-        
-        return ccf_sliced
+        return ccf
     
     def fit_gaussian(self, ccf):
         """

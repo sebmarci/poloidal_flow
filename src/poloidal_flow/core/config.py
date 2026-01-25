@@ -82,6 +82,6 @@ class CorrelationConfig:
     xcorr_fitting_method: str
     xcorr_window: float = 0.01  # seconds
     xcorr_time_lag_interval: Tuple[float, float] = (-1e-4, 1.2e-4)
-    xcorr_resolution: float = 1e-6  # seconds
+    xcorr_resolution: float = None  # seconds (None is highest resolution by default)
     xcorr_interval: int = 1
     xcorr_normalize: bool = True
