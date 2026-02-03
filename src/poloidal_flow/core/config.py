@@ -45,8 +45,8 @@ class ABESConfig:
     channels: List[int] = field(default_factory = lambda: list(range(1, 41)))
     amplitude_cal: bool = False
     spatial_cal: bool = False
-    bandpass_type: Optional[str] = 'Elliptic'
-    bandpass_range: Optional[Tuple[float, float]] = (2e3, 6e3)  # Hz
+    bandpass_type: Optional[str] = 'Butterworth'
+    bandpass_range: Optional[Tuple[float, float]] = (2e3, 10e3)  # Hz
     interpolation_method: str = 'cubic'
     pickle_folder: str = 'pickled_shot_data'
 
@@ -80,7 +80,7 @@ class CorrelationConfig:
     """
 
     xcorr_fitting_method: str
-    xcorr_window: float = 0.01  # seconds
+    xcorr_window: float = 0.05  # seconds
     xcorr_time_lag_interval: Tuple[float, float] = (-1e-4, 1.2e-4)
     xcorr_resolution: float = None  # seconds (None is highest resolution by default)
     xcorr_interval: int = 1
