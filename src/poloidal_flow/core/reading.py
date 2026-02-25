@@ -291,8 +291,7 @@ class ABESDataReader:
             on_time = d_beam_on.coordinate('Time')[0]
             off_time = d_beam_off.coordinate('Time')[0]
             
-            off_interp = CubicSpline(off_time, d_beam_off.data)  
-            backsub_data = d_beam_on.data - off_interp(on_time)
+            backsub_data = d_beam_on.data - np.interp(on_time, off_time, d_beam_off.data)
         
         # Multiple signals are loaded, data is 2D, channel coordinate is present
         else:
@@ -302,8 +301,7 @@ class ABESDataReader:
                 on_time = d_beam_on.coordinate('Time')[0][0]
                 off_time = d_beam_off.coordinate('Time')[0][0]
                 
-                off_interp = CubicSpline(off_time, off_data)              
-                backsub_data[i] = on_data - off_interp(on_time)
+                backsub_data[i] = on_data - np.interp(on_time, off_time, off_data)
                 
         tstart = on_time[0]
         tstep = np.mean(np.diff(on_time))

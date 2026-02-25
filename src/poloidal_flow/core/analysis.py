@@ -101,6 +101,8 @@ class CorrelationAnalysis:
             }
         )
         
+        ccf.get_coordinate_object('Time lag').start += data0.coordinate('Time')[0][0] - data1.coordinate('Time')[0][0]
+        
         return ccf
     
     def fit_gaussian(self, ccf):
