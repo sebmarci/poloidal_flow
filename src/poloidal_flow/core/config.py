@@ -20,35 +20,19 @@ class ABESConfig:
     channels : List[int], optional
         List of ABES channel numbers to acquire (1-40).
         Default is all 40 channels.
-    amplitude_cal : bool, optional
-        Whether to apply amplitude calibration to the signals.
-        Default is False.
-    spatial_cal : bool, optional
-        Whether to apply spatial calibration to the channels.
-        Default is False.
     bandpass_type : Optional[str], optional
         Type of bandpass filter to apply. Options include 'Elliptic', 'Butterworth',
-        or None to skip filtering. Default is 'Elliptic'.
+        or None to skip filtering. Default is None.
     bandpass_range : Optional[Tuple[float, float]], optional
         Bandpass filter frequency range in Hz as (f_low, f_high).
         Default is (2000, 6000) Hz.
-    interpolation_method : str, optional
-        Interpolation method for background subtraction. Options include 'linear',
-        'cubic', 'quadratic'. Default is 'cubic'.
-    pickle_folder : str, optional
-        Path to folder for saving/loading pickled data.
-        Default is 'pickled_shot_data'.
     """
 
     exp_id: str
     time_range: Optional[Tuple[float, float]] = None
     channels: List[int] = field(default_factory = lambda: list(range(1, 41)))
-    amplitude_cal: bool = False
-    spatial_cal: bool = False
-    bandpass_type: Optional[str] = 'Butterworth'
+    bandpass_type: Optional[str] = None
     bandpass_range: Optional[Tuple[float, float]] = (2e3, 10e3)  # Hz
-    interpolation_method: str = 'cubic'
-    pickle_folder: str = 'pickled_shot_data'
 
 @dataclass
 class CorrelationConfig:

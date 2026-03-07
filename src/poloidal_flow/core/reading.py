@@ -3,12 +3,9 @@ ABES data acquisition and preprocessing module.
 """
 
 import flap
-import os
 import flap_w7x_abes
 import numpy as np
-import pickle
-from scipy.interpolate import CubicSpline
-from typing import List, Optional, Tuple
+from typing import List
 from .config import ABESConfig
 
 class ABESDataReader:
@@ -16,8 +13,7 @@ class ABESDataReader:
     Reader class for W7-X ABES data acquisition and preprocessing.
 
     This class handles data acquisition from the W7-X ABES diagnostic system,
-    including background subtraction using beam on/off timing, bandpass filtering,
-    and data persistence via pickle files.
+    including background subtraction using beam on/off timing and bandpass filtering.
 
     Parameters
     ----------
@@ -67,52 +63,13 @@ class ABESDataReader:
         _, _, d_defl1 = self.background_subtraction(deflection = 1)
 
         return d_defl0, d_defl1
-    
-    def from_pickle(self, defl0_datapath: str, defl1_datapath: str):
-        """
-        Load previously saved ABES data from pickle files.
-
-        Parameters
-        ----------
-        defl0_datapath : str
-            Filename (not full path) of pickle file for deflection state 0.
-        defl1_datapath : str
-            Filename (not full path) of pickle file for deflection state 1.
-
-        Returns
-        -------
-        d_defl0 : flap.DataObject
-            Loaded data for deflection state 0, with bandpass filter applied if configured.
-        d_defl1 : flap.DataObject
-            Loaded data for deflection state 1, with bandpass filter applied if configured.
-
-        Notes
-        -----
-        Files are loaded from the directory specified in `config.pickle_folder`.
-        If `config.bandpass_type` is not None, bandpass filtering is applied
-        after loading.
-        """
-        
-        with open(os.path.join(self.config.pickle_folder, defl0_datapath), 'rb') as f:
-            d_defl0 = pickle.load(f)
-            
-        with open(os.path.join(self.config.pickle_folder, defl1_datapath), 'rb') as f:
-            d_defl1 = pickle.load(f)
-            
-        if self.config.bandpass_type is not None:
-            d_defl0 = self.apply_bandpass(d_defl0)
-            d_defl1 = self.apply_bandpass(d_defl1)
-            
-        return d_defl0, d_defl1
             
     def read_data_raw(self):
         """
         Read raw ABES signals from W7-X diagnostic system.
 
-        Returns
-        -------
-        dataobject : flap.DataObject
-            Raw ABES signal data for all configured channels and time range.
+        Stores the result in ``self.raw_data``. Called automatically by
+        ``background_subtraction`` if raw data has not been loaded yet.
 
         Notes
         -----
@@ -121,7 +78,7 @@ class ABESDataReader:
         configuration object.
         """
                 
-        dataobject = flap.get_data(
+        raw_data = flap.get_data(
             'W7X_ABES',
             exp_id = self.config.exp_id,
             name = self.channel_names,
@@ -129,41 +86,41 @@ class ABESDataReader:
             coordinates = {'Time': self.config.time_range}
         )
         
-        return dataobject
+        self.raw_data = raw_data
 
-    def read_timings(self, deflection: int):
+    def read_timings(self):
         """
-        Read beam on/off timing information for background subtraction.
+        Read beam on/off timing information for both deflection states.
 
-        Parameters
-        ----------
-        deflection : int
-            Deflection state (0 or 1).
-
-        Returns
-        -------
-        d_on : flap.DataObject
-            Timing data for beam-on periods.
-        d_off : flap.DataObject
-            Timing data for beam-off periods.
+        Stores results in ``self.on_timings`` (list indexed by deflection state)
+        and ``self.off_timings``. Called automatically by ``background_subtraction``
+        if timings have not been loaded yet.
 
         Notes
         -----
-        The chopper timing is used to identify when the beam is on (Chop=0)
-        vs. off (Chop=1) for the specified deflection state. This is essential
-        for background subtraction.
+        Fetches chopper timings for both deflection states (Defl=0 and Defl=1)
+        and the beam-off periods (Chop=1) in a single call.
         """
         
-        d_on = flap.get_data(
+        defl0_timings = flap.get_data(
             'W7X_ABES',
             exp_id=self.config.exp_id,
             name='Chopper_time',
-            options={'State':{'Chop': 0, 'Defl': deflection}, 'Start':0, 'End':0},
+            options={'State':{'Chop': 0, 'Defl': 0}, 'Start':0, 'End':0},
+            object_name='Beam on',
+            coordinates = {'Time': self.config.time_range}
+        )
+        
+        defl1_timings = flap.get_data(
+            'W7X_ABES',
+            exp_id=self.config.exp_id,
+            name='Chopper_time',
+            options={'State':{'Chop': 0, 'Defl': 1}, 'Start':0, 'End':0},
             object_name='Beam on',
             coordinates = {'Time': self.config.time_range}
         )
 
-        d_off = flap.get_data(
+        off_timings = flap.get_data(
             'W7X_ABES',
             exp_id=self.config.exp_id,
             name='Chopper_time',
@@ -172,8 +129,9 @@ class ABESDataReader:
             coordinates = {'Time': self.config.time_range}
         )
         
-        return d_on, d_off
-    
+        self.on_timings = [defl0_timings, defl1_timings]
+        self.off_timings = off_timings
+         
     def read_spatial_calibration(self):
         """
         Read spatial calibration data for ABES channels.
@@ -262,28 +220,29 @@ class ABESDataReader:
         Notes
         -----
         The background subtraction algorithm:
-        1. Reads raw data and chopper timing for the specified deflection state
+        1. Loads raw data and chopper timings (both deflection states) if not
+           already cached on the instance
         2. Slices data into beam-on and beam-off periods
         3. Averages samples within each chopper period
-        4. Interpolates beam-off signal to beam-on time points using cubic
-           spline or linear interpolation
+        4. Interpolates beam-off signal to beam-on time points using linear
+           interpolation (``numpy.interp``)
         5. Subtracts interpolated background from beam-on signal
         6. Applies bandpass filter if configured
-
-        For single-channel data, uses CubicSpline interpolation. For multi-channel
-        data, uses scipy.interpolate.interp1d with cubic interpolation.
         """
         
-        dataobject = self.read_data_raw()
-        d_on_times, d_off_times = self.read_timings(deflection)
-
-        d_beam_on = dataobject.slice_data(slicing={'Sample': d_on_times})
+        if not hasattr(self, 'raw_data'):
+            self.read_data_raw()
+            
+        if (not hasattr(self, 'on_timings')):
+            self.read_timings()
+        
+        d_beam_on = self.raw_data.slice_data(slicing={'Sample': self.on_timings[deflection]})
         d_beam_on = d_beam_on.slice_data(summing={'Rel. Sample in int(Sample)': 'Mean'})
 
-        d_beam_off = dataobject.slice_data(slicing={'Sample': d_off_times})
+        d_beam_off = self.raw_data.slice_data(slicing={'Sample': self.off_timings})
         d_beam_off = d_beam_off.slice_data(summing={'Rel. Sample in int(Sample)': 'Mean'})
         
-        backsub_data = d_beam_on.data
+        backsub_data = d_beam_on.data.copy()
         
         # Edge case if the user requests 1 channel
         if len(self.config.channels) == 1:
