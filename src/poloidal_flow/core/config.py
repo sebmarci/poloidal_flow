@@ -62,10 +62,11 @@ class CorrelationConfig:
         Whether to normalize the cross-correlation function.
         Default is True.
     """
-
+    
     xcorr_fitting_method: str
     xcorr_window: float = 0.05  # seconds
     xcorr_time_lag_interval: Tuple[float, float] = (-1e-4, 1.2e-4)
+    apdcam_path: str = '/data2/W7-X/APDCAM'
     xcorr_resolution: float = None  # seconds (None is highest resolution by default)
     xcorr_interval: int = 1
     xcorr_normalize: bool = True

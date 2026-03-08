@@ -2,6 +2,7 @@
 Cross-correlation analysis module for ABES poloidal flow measurements.
 """
 
+import os
 import flap
 import numpy as np
 from scipy.interpolate import CubicSpline
@@ -53,6 +54,7 @@ class CorrelationAnalysis:
     
     def __init__(self, data_defl0: flap.DataObject, data_defl1: flap.DataObject, config: CorrelationConfig):
         
+        self.exp_id = data_defl0.exp_id
         self.data_defl0 = data_defl0
         self.data_defl1 = data_defl1
         self.config = config
@@ -66,6 +68,25 @@ class CorrelationAnalysis:
             self.fitting_method = self.fitting_methods[self.config.xcorr_fitting_method]
         except KeyError:
             raise ValueError('Invalid fitting method: must be gaussian or cubic_spline')
+        
+    def get_poloidal_deflection_voltage(self):
+        
+        xmlpath = os.path.join(self.config.apdcam_path, self.exp_id, f'{self.exp_id}_config.xml')
+                
+        xml = flap.FlapXml()
+        xml.read_file(xmlpath)
+        
+        voltage_top = float(xml.get_element(
+            section = 'Chopper', 
+            element = 'VoltTop1'
+        )['Value'])
+
+        voltage_bottom = float(xml.get_element(
+            section = 'Chopper',
+            element = 'VoltBottom1'
+        )['Value'])
+        
+        return voltage_top - voltage_bottom
         
     def ccf_window_single(self, data0, data1):
         """

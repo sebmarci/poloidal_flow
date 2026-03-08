@@ -233,7 +233,7 @@ class ABESDataReader:
         if not hasattr(self, 'raw_data'):
             self.read_data_raw()
             
-        if (not hasattr(self, 'on_timings')):
+        if not hasattr(self, 'on_timings'):
             self.read_timings()
         
         d_beam_on = self.raw_data.slice_data(slicing={'Sample': self.on_timings[deflection]})
