@@ -70,3 +70,4 @@ class CorrelationConfig:
     xcorr_resolution: float = None  # seconds (None is highest resolution by default)
     xcorr_interval: int = 1
     xcorr_normalize: bool = True
+    corr_threshold: float = None

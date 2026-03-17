@@ -247,7 +247,11 @@ class CorrelationAnalysis:
                 ccf_single = self.ccf_window_single(defl0_single, defl1_single)
                 tau, corr, _ = self.fitting_method(ccf_single)
                 
-                tau_vals[i, j] = tau
+                if self.config.corr_threshold is not None and corr < self.config.corr_threshold:
+                    tau_vals[i, j] = np.nan
+                else:    
+                    tau_vals[i, j] = tau
+                    
                 corr_vals[i, j] = corr
                             
         return tau_vals, corr_vals
