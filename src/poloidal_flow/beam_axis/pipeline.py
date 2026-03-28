@@ -12,13 +12,13 @@ class CVPipeline(object):
         roi_radius,
         huber_param,
         spatcal_data,
-        vertical_open_kernel=40
+        max_row_width=50
     ):
-                
+
         self.roi_center = roi_center
         self.roi_radius = roi_radius
         self.huber_param = huber_param
-        self.vertical_open_kernel = vertical_open_kernel
+        self.max_row_width = max_row_width
         (self.dev_x, self.dev_y) = spatcal_data
         
         self.img = cv2.imread(imgpath, cv2.IMREAD_GRAYSCALE)
@@ -43,21 +43,20 @@ class CVPipeline(object):
         _, img_thr = cv2.threshold(img_masked, otsu_thresh - 10, 255, cv2.THRESH_TOZERO)
         self.img = img_thr
                 
-    def remove_horizontal_blobs(self):
-        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, self.vertical_open_kernel))
-        self.img = cv2.morphologyEx(self.img, cv2.MORPH_OPEN, kernel)
-
     def find_centroids(self):
-        
+
         beam_points = []
         rows_valid = []
 
         for (i, row) in enumerate(self.img):
+            nonzero_cols = np.nonzero(row)[0]
+            if len(nonzero_cols) == 0:
+                continue
+            if nonzero_cols[-1] - nonzero_cols[0] > self.max_row_width:
+                continue
             total = row.sum()
-            if total > 0:
-                cols = np.arange(len(row))
-                beam_points.append(int(np.rint(np.dot(cols, row) / total)))
-                rows_valid.append(i)
+            beam_points.append(int(np.rint(np.dot(nonzero_cols, row[nonzero_cols]) / total)))
+            rows_valid.append(i)
                 
         self.points = np.column_stack((np.array(beam_points), np.array(rows_valid)))
         
