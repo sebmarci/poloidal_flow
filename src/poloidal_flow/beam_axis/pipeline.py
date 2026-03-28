@@ -4,12 +4,22 @@ import matplotlib.pyplot as plt
 import cv2
 
 class CVPipeline(object):
-    
-    def __init__(self, imgpath, roi_center, roi_radius, huber_param):
+
+    def __init__(
+        self,
+        imgpath,
+        roi_center,
+        roi_radius,
+        huber_param,
+        spatcal_data,
+        vertical_open_kernel=40
+    ):
                 
         self.roi_center = roi_center
         self.roi_radius = roi_radius
         self.huber_param = huber_param
+        self.vertical_open_kernel = vertical_open_kernel
+        (self.dev_x, self.dev_y) = spatcal_data
         
         self.img = cv2.imread(imgpath, cv2.IMREAD_GRAYSCALE)
         
@@ -30,11 +40,13 @@ class CVPipeline(object):
         print(f"Otsu threshold: {otsu_thresh}")
 
         # Apply the threshold to the masked image
-        _, img_thr = cv2.threshold(img_masked, otsu_thresh, 255, cv2.THRESH_TOZERO)
+        _, img_thr = cv2.threshold(img_masked, otsu_thresh - 10, 255, cv2.THRESH_TOZERO)
         self.img = img_thr
-        
-        print(f'Otsu threshold is {otsu_thresh}')
-        
+                
+    def remove_horizontal_blobs(self):
+        kernel = cv2.getStructuringElement(cv2.MORPH_RECT, (1, self.vertical_open_kernel))
+        self.img = cv2.morphologyEx(self.img, cv2.MORPH_OPEN, kernel)
+
     def find_centroids(self):
         
         beam_points = []
@@ -46,16 +58,30 @@ class CVPipeline(object):
                 cols = np.arange(len(row))
                 beam_points.append(int(np.rint(np.dot(cols, row) / total)))
                 rows_valid.append(i)
-
-        img_max = cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
-
-        for (x, y) in zip(beam_points, rows_valid):
-            img_max = cv2.circle(img_max, (x, y), 2, color = (0, 0, 255), thickness = 1)
-            
-        self.img_max = img_max
-    
-    def run_pipeline(self):
+                
+        self.points = np.column_stack((np.array(beam_points), np.array(rows_valid)))
         
-        self.crop_and_threshold()
-        self.find_centroids()
+    def convert_to_device_coordinates(self):
+        
+        points_x = np.array([self.dev_x[i, j] for i, j in self.points])
+        points_y = np.array([self.dev_y[i, j] for i, j in self.points])
+        self.points_phys = np.column_stack((points_x, points_y))
+        
+    def fit_line(self):
+        
+        self.fit_params = (cv2.fitLine(
+            self.points_phys,
+            cv2.DIST_HUBER,
+            self.huber_param,
+            0.1, 0.1
+        )).T[0] # v_x, v_y, x_0, y_0
+        
+    def visualize_centroids(self):
+        
+        img_centroids = cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
+
+        for (x, y) in zip(self.points[:, 0], self.points[:, 1]):
+            img_centroids = cv2.circle(img_centroids, (x, y), 2, color = (0, 0, 255), thickness = 1)
+            
+        return img_centroids
         
