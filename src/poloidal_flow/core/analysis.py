@@ -61,7 +61,8 @@ class CorrelationAnalysis:
         
         self.fitting_methods = {
             'gaussian': self.fit_gaussian,
-            'cubic_spline': self.fit_cubic_spline
+            'cubic_spline': self.fit_cubic_spline,
+            'parabola': self.fit_parabola
         }
         
         try:
@@ -190,6 +191,29 @@ class CorrelationAnalysis:
                 
         return tau, cubic_spline(tau), cubic_spline
     
+    def fit_parabola(self, ccf):
+        
+        time_lags = ccf.coordinate('Time lag')[0] * 1e6  
+        dt = time_lags[1] - time_lags[0]
+        
+        ccf_data = ccf.data
+        ind_max = np.argmax(ccf_data)
+        
+        yminus = ccf_data[ind_max - 1]
+        ynull = ccf_data[ind_max]
+        yplus = ccf_data[ind_max + 1]
+        
+        a = 0.5 * (yminus - 2*ynull + yplus)
+        b = 0.5 * (yplus - yminus)
+        c = ynull
+        
+        delta = -b / (2*a)
+        
+        tau = time_lags[ind_max] + delta * dt
+        corr = a*delta**2 + b*delta + c
+        
+        return tau, corr, [a, b, c]
+    
     def get_max_time_lag(self, times, channels):
         """
         Compute time delays for multiple time windows and channels.
@@ -247,11 +271,7 @@ class CorrelationAnalysis:
                 ccf_single = self.ccf_window_single(defl0_single, defl1_single)
                 tau, corr, _ = self.fitting_method(ccf_single)
                 
-                if self.config.corr_threshold is not None and corr < self.config.corr_threshold:
-                    tau_vals[i, j] = np.nan
-                else:    
-                    tau_vals[i, j] = tau
-                    
+                tau_vals[i, j] = tau
                 corr_vals[i, j] = corr
                             
         return tau_vals, corr_vals
