@@ -32,7 +32,7 @@ class CCFPlotter:
         self,
         time: float,
         channel: int,
-        method: Literal['gaussian', 'spline'] = 'gaussian',
+        method: Literal['gaussian', 'spline', 'parabola'] = 'gaussian',
         show_fit: bool = True,
         **kwargs
     ) -> Tuple[plt.Figure, plt.Axes]:
@@ -130,8 +130,23 @@ class CCFPlotter:
                        color=kwargs.get('color', 'C1'),
                        linewidth=kwargs.get('linewidth', 2))
                 title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
+
+            elif method == 'parabola':
+                tau_max, ccf_max, coeffs = self.analyzer.fit_parabola(ccf)
+                a, b, c = coeffs
+                dt = time_lags[1] - time_lags[0]
+                tau_center_bin = time_lags[np.argmax(ccf.data)]
+                # Parabola is only valid near the peak (3-point fit); plot ±3 bins
+                ts_par = np.linspace(tau_center_bin - 3*dt, tau_center_bin + 3*dt, 200)
+                delta = (ts_par - tau_center_bin) / dt
+                ax.plot(ts_par, a*delta**2 + b*delta + c,
+                       label='Parabola fit',
+                       color=kwargs.get('color', 'C1'),
+                       linewidth=kwargs.get('linewidth', 2))
+                title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
+
             else:
-                raise ValueError(f"Invalid method '{method}'. Must be 'gaussian' or 'spline'.")
+                raise ValueError(f"Invalid method '{method}'. Must be 'gaussian', 'spline', or 'parabola'.")
 
             # Mark peak position
             ax.scatter(tau_max, ccf_max,
@@ -163,7 +178,7 @@ class CCFPlotter:
     def plot_all_channels(
         self,
         time: float,
-        method: Literal['gaussian', 'spline'] = 'spline',
+        method: Literal['gaussian', 'spline', 'parabola'] = 'spline',
         channels: Optional[range] = None,
         figsize: Tuple[int, int] = (40, 40),
         nrows: int = 8,
@@ -213,7 +228,7 @@ class CCFPlotter:
         # Create subplot grid
         fig, axes = plt.subplots(nrows=nrows, ncols=ncols, figsize=figsize)
 
-        method_name = 'Cubic Spline' if method == 'spline' else 'Gaussian'
+        method_name = {'spline': 'Cubic Spline', 'gaussian': 'Gaussian', 'parabola': 'Parabola'}.get(method, method)
         fig.suptitle(
             f'{method_name} CCF Fits - All Channels at t = {time:.2f} s',
             fontsize=kwargs.get('suptitle_fontsize', 20)
@@ -258,8 +273,16 @@ class CCFPlotter:
             elif method == 'gaussian':
                 tau_max, ccf_max, popt = self.analyzer.fit_gaussian(ccf)
                 ax.plot(ts, gaussian_func(ts, *popt), color='C1', linewidth=1.5)
+            elif method == 'parabola':
+                tau_max, ccf_max, coeffs = self.analyzer.fit_parabola(ccf)
+                a, b, c = coeffs
+                dt = time_lags[1] - time_lags[0]
+                tau_center_bin = time_lags[np.argmax(ccf.data)]
+                ts_par = np.linspace(tau_center_bin - 3*dt, tau_center_bin + 3*dt, 200)
+                delta = (ts_par - tau_center_bin) / dt
+                ax.plot(ts_par, a*delta**2 + b*delta + c, color='C1', linewidth=1.5)
             else:
-                raise ValueError(f"Invalid method '{method}'. Must be 'gaussian' or 'spline'.")
+                raise ValueError(f"Invalid method '{method}'. Must be 'gaussian', 'spline', or 'parabola'.")
 
             # Plot raw data and peak
             ax.scatter(time_lags, ccf.data, alpha=0.6, s=20)
