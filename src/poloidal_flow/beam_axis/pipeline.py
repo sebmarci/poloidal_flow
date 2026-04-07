@@ -12,13 +12,15 @@ class CVPipeline(object):
         roi_radius,
         huber_param,
         spatcal_data,
-        max_row_width=50
+        max_row_width=175,
+        min_row_pixels=5
     ):
 
         self.roi_center = roi_center
         self.roi_radius = roi_radius
         self.huber_param = huber_param
         self.max_row_width = max_row_width
+        self.min_row_pixels = min_row_pixels
         (self.dev_x, self.dev_y) = spatcal_data
         
         self.img = cv2.imread(imgpath, cv2.IMREAD_GRAYSCALE)
@@ -30,7 +32,8 @@ class CVPipeline(object):
         cv2.circle(roi_mask, self.roi_center, self.roi_radius, 255, -1)
         img_masked = cv2.bitwise_and(self.img, self.img, mask = roi_mask)
         
-        self.img = cv2.GaussianBlur(self.img, (7, 7), 0)
+        # Apply median filter
+        self.img = cv2.medianBlur(self.img, ksize=5)
 
         # Extract only ROI pixels for threshold calculation
         roi_pixels = self.img[roi_mask == 255]
@@ -50,7 +53,7 @@ class CVPipeline(object):
 
         for (i, row) in enumerate(self.img):
             nonzero_cols = np.nonzero(row)[0]
-            if len(nonzero_cols) == 0:
+            if len(nonzero_cols) < self.min_row_pixels:
                 continue
             if nonzero_cols[-1] - nonzero_cols[0] > self.max_row_width:
                 continue
