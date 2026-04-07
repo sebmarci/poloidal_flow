@@ -14,8 +14,9 @@ This package provides tools for analyzing ABES diagnostic data from W7-X experim
 - **Cross-Correlation Analysis**: Compute maximum CCF time lags between deflection states with multiple fitting methods:
   - Gaussian curve fitting
   - Cubic spline interpolation with peak finding
-- **Spatial Calibration**: Support for amplitude and spatial calibration of ABES channels
-- **Data Persistence**: Save and load processed data using pickle format
+  - Second degree polynomial (parabola) peak fitting
+- **Data Persistence**: Save and load processed data (including metadata) using HDF5 format.
+- **CMOS beam axis calibration**: Determines calibration factor between poloidal deflection voltage and poloidal separation using robust Huber-fitting.
 
 ## Installation
 
@@ -25,5 +26,5 @@ The package requires:
 - Python 3.8+
 - [FLAP (Fusion Library of Analysis Programs)](https://github.com/fusion-flap/flap)
 - **flap_w7x_abes** - W7-X ABES data reader for FLAP (must be in PYTHONPATH)
-- NumPy, SciPy, Matplotlib
+- NumPy, SciPy, Matplotlib, h5py
 
