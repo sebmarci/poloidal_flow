@@ -111,8 +111,11 @@ class CorrelationAnalysis:
         Uses FLAP's ccf method to compute normalized cross-correlation.
         """
         
-        ccf = data0.ccf(
-            data1, 
+        # CCF convention: upwards beam is defl0, downwards is defl1
+        # Positive time lag of CCF(lower, upper) means upwards flow
+        
+        ccf = data1.ccf(
+            data0, 
             coordinate = 'Time',
             options = {
                 'Interval_n': self.config.xcorr_interval,
