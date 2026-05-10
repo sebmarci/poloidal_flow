@@ -16,6 +16,9 @@ from .config import CorrelationConfig
 def gaussian_func(x, x0, sigma, a, b):
     return a * np.exp(-(x-x0)**2 / (2*sigma**2)) + b
 
+def parabolic_func(x, x0, a, b):
+    return a * (x - x0)**2 + b
+
 class CorrelationAnalysis:
     """
     Cross-correlation analysis for ABES poloidal flow measurements.
@@ -126,7 +129,7 @@ class CorrelationAnalysis:
             }
         )
         
-        ccf.get_coordinate_object('Time lag').start += data0.coordinate('Time')[0][0] - data1.coordinate('Time')[0][0]
+        ccf.get_coordinate_object('Time lag').start += data1.coordinate('Time')[0][0] - data0.coordinate('Time')[0][0]
         
         return ccf
     
@@ -196,26 +199,18 @@ class CorrelationAnalysis:
     
     def fit_parabola(self, ccf):
         
-        time_lags = ccf.coordinate('Time lag')[0] * 1e6  
-        dt = time_lags[1] - time_lags[0]
+        time_lags = ccf.coordinate('Time lag')[0] * 1e6 
+        ind_max = np.argmax(ccf.data)
         
-        ccf_data = ccf.data
-        ind_max = np.argmax(ccf_data)
+        time_lag_slice = time_lags[ind_max-2:ind_max+3]
+        ccf_slice = ccf.data[ind_max-2:ind_max+3]
+        ccf_err_slice = ccf.error[ind_max-2:ind_max+3]
         
-        yminus = ccf_data[ind_max - 1]
-        ynull = ccf_data[ind_max]
-        yplus = ccf_data[ind_max + 1]
+        # popt = [x0, a, b]
+        popt, pcov = curve_fit(parabolic_func, time_lag_slice, ccf_slice, sigma = ccf_err_slice)
+        perr = np.sqrt(np.diag(pcov))
         
-        a = 0.5 * (yminus - 2*ynull + yplus)
-        b = 0.5 * (yplus - yminus)
-        c = ynull
-        
-        delta = -b / (2*a)
-        
-        tau = time_lags[ind_max] + delta * dt
-        corr = a*delta**2 + b*delta + c
-        
-        return tau, corr, [a, b, c]
+        return popt[0], perr[0], parabolic_func(popt[0], *popt), popt
     
     def get_max_time_lag(self, times, channels):
         """
@@ -247,6 +242,7 @@ class CorrelationAnalysis:
         """
                                 
         tau_vals = np.zeros((len(times), len(channels)))
+        tau_err_vals = np.zeros_like(tau_vals)
         corr_vals = np.zeros_like(tau_vals)
         
         for (i, t) in enumerate(times):
@@ -272,11 +268,12 @@ class CorrelationAnalysis:
                 )
                 
                 ccf_single = self.ccf_window_single(defl0_single, defl1_single)
-                tau, corr, _ = self.fitting_method(ccf_single)
+                tau, tau_err, corr, _ = self.fitting_method(ccf_single)
                 
                 tau_vals[i, j] = tau
+                tau_err_vals[i, j] = tau_err
                 corr_vals[i, j] = corr
                             
-        return tau_vals, corr_vals
+        return tau_vals, tau_err_vals, corr_vals
             
             

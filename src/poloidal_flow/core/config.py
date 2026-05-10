@@ -56,7 +56,7 @@ class CorrelationConfig:
         Time resolution for cross-correlation function in seconds.
         Default is 1e-6 (1 microsecond).
     xcorr_interval : int, optional
-        Interval parameter for cross-correlation computation.
+        Number of subintervals for cross-correlation computation.
         Default is 1.
     xcorr_normalize : bool, optional
         Whether to normalize the cross-correlation function.

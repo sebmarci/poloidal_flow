@@ -78,12 +78,7 @@ class CVPipeline(object):
             0.1, 0.1
         )).T[0] # v_x, v_y, x_0, y_0
         
-    def visualize_centroids(self):
+    def return_grayscale_img(self):
         
-        img_centroids = cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
-
-        for (x, y) in zip(self.points[:, 0], self.points[:, 1]):
-            img_centroids = cv2.circle(img_centroids, (x, y), 2, color = (0, 0, 255), thickness = 1)
-            
-        return img_centroids
+        return cv2.cvtColor(self.img, cv2.COLOR_GRAY2BGR)
         

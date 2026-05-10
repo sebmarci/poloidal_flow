@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from typing import Optional, Tuple, Literal
 import flap
 
-from ..core.analysis import CorrelationAnalysis, gaussian_func
+from ..core.analysis import CorrelationAnalysis, gaussian_func, parabolic_func
 
 
 class CCFPlotter:
@@ -103,13 +103,19 @@ class CCFPlotter:
         ccf = self.analyzer.ccf_window_single(data0, data1)
         time_lags = ccf.coordinate('Time lag')[0] * 1e6  # Convert to microseconds
 
-        # Plot raw CCF data
-        scatter_kwargs = {
-            'alpha': kwargs.get('alpha', 0.7),
-            'label': 'CCF data',
-            's': kwargs.get('s', 30)
-        }
-        ax.scatter(time_lags, ccf.data, **scatter_kwargs)
+        # Plot raw CCF data with shaded error band
+        ax.fill_between(
+            time_lags, ccf.data - ccf.error, ccf.data + ccf.error,
+            color='C0', alpha=kwargs.get('error_alpha', 0.2)
+        )
+        ax.plot(
+            time_lags, ccf.data,
+            color='C0',
+            alpha=kwargs.get('alpha', 0.7),
+            marker = 'o',
+            ls = '--',
+            label='CCF data'
+        )
 
         # Fit and plot curve
         if show_fit:
@@ -132,18 +138,16 @@ class CCFPlotter:
                 title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
 
             elif method == 'parabola':
-                tau_max, ccf_max, coeffs = self.analyzer.fit_parabola(ccf)
-                a, b, c = coeffs
-                dt = time_lags[1] - time_lags[0]
-                tau_center_bin = time_lags[np.argmax(ccf.data)]
-                # Parabola is only valid near the peak (3-point fit); plot ±3 bins
-                ts_par = np.linspace(tau_center_bin - 3*dt, tau_center_bin + 3*dt, 200)
-                delta = (ts_par - tau_center_bin) / dt
-                ax.plot(ts_par, a*delta**2 + b*delta + c,
+                tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
+                ind_max = np.argmax(ccf.data)
+                time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
+                ax.plot(ts_par, parabolic_func(ts_par, *popt),
                        label='Parabola fit',
                        color=kwargs.get('color', 'C1'),
                        linewidth=kwargs.get('linewidth', 2))
-                title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
+                title_str = (f'Channel {channel}, t = {time:.2f} s\n'
+                             f'$\\tau$ = {tau_max:.2f} $\\pm$ {tau_err:.2f} $\\mu$s')
 
             else:
                 raise ValueError(f"Invalid method '{method}'. Must be 'gaussian', 'spline', or 'parabola'.")
@@ -162,6 +166,11 @@ class CCFPlotter:
                         linestyle='--',
                         alpha=0.5,
                         linewidth=1)
+
+            if method == 'parabola':
+                ax.errorbar(tau_max, ccf_max, xerr=tau_err,
+                            color='red', capsize=4, capthick=1.5,
+                            elinewidth=1.5, zorder=4)
             
         else:
             title_str = f'Channel {channel}, t = {time:.2f} s'
@@ -274,23 +283,32 @@ class CCFPlotter:
                 tau_max, ccf_max, popt = self.analyzer.fit_gaussian(ccf)
                 ax.plot(ts, gaussian_func(ts, *popt), color='C1', linewidth=1.5)
             elif method == 'parabola':
-                tau_max, ccf_max, coeffs = self.analyzer.fit_parabola(ccf)
-                a, b, c = coeffs
-                dt = time_lags[1] - time_lags[0]
-                tau_center_bin = time_lags[np.argmax(ccf.data)]
-                ts_par = np.linspace(tau_center_bin - 3*dt, tau_center_bin + 3*dt, 200)
-                delta = (ts_par - tau_center_bin) / dt
-                ax.plot(ts_par, a*delta**2 + b*delta + c, color='C1', linewidth=1.5)
+                tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
+                ind_max = np.argmax(ccf.data)
+                time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
+                ax.plot(ts_par, parabolic_func(ts_par, *popt), color='C1', linewidth=1.5)
             else:
                 raise ValueError(f"Invalid method '{method}'. Must be 'gaussian', 'spline', or 'parabola'.")
 
-            # Plot raw data and peak
-            ax.scatter(time_lags, ccf.data, alpha=0.6, s=20)
+            # Plot raw data with shaded error band
+            ax.fill_between(time_lags, ccf.data - ccf.error, ccf.data + ccf.error,
+                            color='C0', alpha=0.2)
+            ax.scatter(time_lags, ccf.data, color='C0', alpha=0.6, s=20)
             ax.scatter(tau_max, ccf_max, color='red', s=50, zorder=5, edgecolors='black', linewidths=1)
             ax.axvline(x=tau_max, color='red', linestyle='--', alpha=0.4, linewidth=1)
+            if method == 'parabola':
+                ax.errorbar(tau_max, ccf_max, xerr=tau_err,
+                            color='red', capsize=3, capthick=1, elinewidth=1, zorder=4)
 
             # Styling
-            ax.set_title(f'CH{ch}: $\\tau$ = {tau_max:.2f} $\\mu$s', fontsize=10)
+            if method == 'parabola':
+                ax.set_title(
+                    f'CH{ch}: $\\tau$ = {tau_max:.2f} $\\pm$ {tau_err:.2f} $\\mu$s',
+                    fontsize=10
+                )
+            else:
+                ax.set_title(f'CH{ch}: $\\tau$ = {tau_max:.2f} $\\mu$s', fontsize=10)
             ax.set_xlabel('$\\tau$ [$\\mu$s]', fontsize=9)
             ax.set_ylabel('CCF', fontsize=9)
             ax.grid(True, alpha=0.3)
