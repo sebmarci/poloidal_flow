@@ -15,12 +15,6 @@ __pycache__
 *.jpg
 *.jpeg
 
-# Notebooks (may commit in the future)
-notebooks
-
-# Code snippets 
-code_snippets
-
 # Claude
 CLAUDE.md
 claude_context/
