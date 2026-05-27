@@ -7,7 +7,7 @@ import matplotlib.pyplot as plt
 from typing import Optional, Tuple, Literal
 import flap
 
-from ..core.analysis import CorrelationAnalysis, gaussian_func, parabolic_func
+from .analysis import CorrelationAnalysis, gaussian_func, parabolic_func
 
 
 class CCFPlotter:

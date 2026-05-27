@@ -200,7 +200,7 @@ class CorrelationAnalysis:
     def fit_parabola(self, ccf):
         
         time_lags = ccf.coordinate('Time lag')[0] * 1e6 
-        ind_max = np.argmax(ccf.data)
+        ind_max = np.argmax(np.abs(ccf.data))
         
         time_lag_slice = time_lags[ind_max-2:ind_max+3]
         ccf_slice = ccf.data[ind_max-2:ind_max+3]
@@ -244,17 +244,33 @@ class CorrelationAnalysis:
         tau_vals = np.zeros((len(times), len(channels)))
         tau_err_vals = np.zeros_like(tau_vals)
         corr_vals = np.zeros_like(tau_vals)
+        corr_err_vals = np.zeros_like(tau_vals)
         
         for (i, t) in enumerate(times):
             
             defl0_time_slice = self.data_defl0.slice_data(
                 slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
-                options = {'Interpolation': 'Linear'}
             )
             defl1_time_slice = self.data_defl1.slice_data(
                 slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
-                options = {'Interpolation': 'Linear'}
             )
+            
+            # Interleaved chopper grids, closes value slicing can leave defl0
+            # and defl1 differing by 1 sample. Truncate to the common length.
+            time_dim_0 = defl0_time_slice.get_coordinate_object('Time').dimension_list[0]
+            time_dim_1 = defl1_time_slice.get_coordinate_object('Time').dimension_list[0]
+            n = min(defl0_time_slice.data.shape[time_dim_0],
+                    defl1_time_slice.data.shape[time_dim_1])
+
+            sl0 = [slice(None)] * defl0_time_slice.data.ndim
+            sl0[time_dim_0] = slice(0, n)
+            defl0_time_slice.data = defl0_time_slice.data[tuple(sl0)]
+            defl0_time_slice.shape = defl0_time_slice.data.shape
+
+            sl1 = [slice(None)] * defl1_time_slice.data.ndim
+            sl1[time_dim_1] = slice(0, n)
+            defl1_time_slice.data = defl1_time_slice.data[tuple(sl1)]
+            defl1_time_slice.shape = defl1_time_slice.data.shape
             
             for (j, ch) in enumerate(channels):
                 
@@ -267,13 +283,16 @@ class CorrelationAnalysis:
                     slicing = {'Channel number': ch}
                 )
                 
-                ccf_single = self.ccf_window_single(defl0_single, defl1_single)
+                ccf_single = self.ccf_window_single(defl0_single, defl1_single)                
                 tau, tau_err, corr, _ = self.fitting_method(ccf_single)
+                
+                peak_idx = np.argmax(np.abs(ccf_single.data))
                 
                 tau_vals[i, j] = tau
                 tau_err_vals[i, j] = tau_err
                 corr_vals[i, j] = corr
+                corr_err_vals[i, j] = ccf_single.error[peak_idx] / ccf_single.data[peak_idx]
                             
-        return tau_vals, tau_err_vals, corr_vals
+        return tau_vals, tau_err_vals, corr_vals, corr_err_vals
             
             
