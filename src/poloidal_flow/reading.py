@@ -18,8 +18,8 @@ class ABESDataReader:
     Parameters
     ----------
     config : ABESConfig
-        Configuration object containing experiment parameters, channel selection,
-        filter settings, and file paths.
+        Configuration object containing experiment parameters, filter
+        settings, and spatial-calibration options.
 
     Attributes
     ----------
@@ -30,14 +30,14 @@ class ABESDataReader:
 
     Examples
     --------
-    >>> config = ABESConfig(exp_id='20250409.046', channels=list(range(1, 21)))
+    >>> config = ABESConfig(exp_id='20250409.046', spatial_cal=False)
     >>> reader = ABESDataReader(config)
     >>> data_defl0, data_defl1 = reader.read_data()
     """
     
     def __init__(self, config: ABESConfig):
         self.config = config
-        self.channel_names = [f'ABES-{ch}' for ch in self.config.channels]
+        self.channel_names = [f'ABES-{ch}' for ch in range(1, 41)]
 
     def read_data(self):
         """
@@ -139,27 +139,29 @@ class ABESDataReader:
         Returns
         -------
         dev_r : numpy.ndarray
-            Device R coordinates (major radius) for each channel.
-        dev_x : numpy.ndarray
-            Device X coordinates for each channel.
-        dev_y : numpy.ndarray
-            Device Y coordinates for each channel.
+            Device R coordinates (major radius) for channels 1-40,
+            as a 1D array of length 40.
 
         Notes
         -----
         Uses the flap_w7x_abes.ShotSpatCal class to retrieve spatial
-        calibration information for the configured channels. Coordinates
-        are in the device coordinate system.
+        calibration information. The calibration shot is taken from
+        ``config.spatcal_exp_id`` when set, otherwise it falls back to
+        ``config.exp_id``. Coordinates are in the device coordinate system.
         """
         
-        spatcal = flap_w7x_abes.ShotSpatCal(self.config.exp_id)
+        channels = np.arange(1, 41)
+        
+        if self.config.spatcal_exp_id is not None:
+            spatcal_id = self.config.spatcal_exp_id
+        else:
+            spatcal_id = self.config.exp_id
+        
+        spatcal = flap_w7x_abes.ShotSpatCal(spatcal_id)
         spatcal.read()
         
-        dev_r = np.array([spatcal.data['Device R'][spatcal.data['Channel name'] == f'ABES-{ch}'] for ch in self.config.channels])
-        dev_x = np.array([spatcal.data['Device x'][spatcal.data['Channel name'] == f'ABES-{ch}'] for ch in self.config.channels])
-        dev_y = np.array([spatcal.data['Device y'][spatcal.data['Channel name'] == f'ABES-{ch}'] for ch in self.config.channels])
-        
-        return dev_r, dev_x, dev_y
+        dev_r = np.array([spatcal.data['Device R'][spatcal.data['Channel name'] == f'ABES-{ch}'] for ch in channels]).T[0]
+        return dev_r
         
     def apply_bandpass(self, dataobject: flap.DataObject):
         """
@@ -244,23 +246,11 @@ class ABESDataReader:
         
         backsub_data = d_beam_on.data.copy()
         
-        # Edge case if the user requests 1 channel
-        if len(self.config.channels) == 1:
-                
-            on_time = d_beam_on.coordinate('Time')[0]
-            off_time = d_beam_off.coordinate('Time')[0]
-            
-            backsub_data = d_beam_on.data - np.interp(on_time, off_time, d_beam_off.data)
+        on_time = d_beam_on.coordinate('Time')[0][0]
+        off_time = d_beam_off.coordinate('Time')[0][0]
         
-        # Multiple signals are loaded, data is 2D, channel coordinate is present
-        else:
-        
-            for (i, (on_data, off_data)) in enumerate(zip(d_beam_on.data, d_beam_off.data)):
-                                
-                on_time = d_beam_on.coordinate('Time')[0][0]
-                off_time = d_beam_off.coordinate('Time')[0][0]
-                
-                backsub_data[i] = on_data - np.interp(on_time, off_time, off_data)
+        for (i, (on_data, off_data)) in enumerate(zip(d_beam_on.data, d_beam_off.data)):
+            backsub_data[i] = on_data - np.interp(on_time, off_time, off_data)
                 
         tstart = on_time[0]
         tstep = np.mean(np.diff(on_time))
@@ -271,25 +261,31 @@ class ABESDataReader:
             start = tstart,
             step = tstep,
             mode = flap.coordinate.CoordinateMode(equidistant = True),
+            dimension_list = [1]
+        )
+        
+                    
+        channel_coord = flap.Coordinate(
+            name = 'Channel number',
+            start = 1,
+            step = 1,            
+            mode = flap.coordinate.CoordinateMode(equidistant = True),
             dimension_list = [0]
         )
         
-        coordinates = [time_coord]
+        coordinates = [time_coord, channel_coord]
         
-        if len(self.channel_names) != 1:
+        if self.config.spatial_cal:
             
-            channel_coord = flap.Coordinate(
-            name = 'Channel number',
-            values = self.config.channels,
-            shape = len(self.config.channels),
-            dimension_list = [0],
-            mode = flap.coordinate.CoordinateMode(equidistant = False)
+            radial_coord = flap.Coordinate(
+                name = 'Device R',
+                unit = 'Meter',
+                values = self.read_spatial_calibration(),
+                mode = flap.coordinate.CoordinateMode(equidistant = False),
+                dimension_list = [0]
             )
-            
-            time_coord.dimension_list = [1]
-            
-            coordinates.append(channel_coord)
-        
+            coordinates.append(radial_coord)
+                
         d_backsub = flap.DataObject(
             exp_id = self.config.exp_id,
             data_title = 'W7-X ABES data',

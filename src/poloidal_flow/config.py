@@ -14,23 +14,28 @@ class ABESConfig:
     ----------
     exp_id : str
         Experiment ID (shot number).
+    spatial_cal : bool, optional
+        If True, attach a 'Device R' coordinate to the background-subtracted
+        DataObject using ``ABESDataReader.read_spatial_calibration``.
+        Default is False.
+    spatcal_exp_id : Optional[str], optional
+        Experiment ID to use when looking up the spatial calibration.
+        If None, ``exp_id`` is used. Default is None.
     time_range : Optional[Tuple[float, float]], optional
         Time range for data acquisition in seconds as (start, end).
         If None, the entire shot duration is used. Default is None.
-    channels : List[int], optional
-        List of ABES channel numbers to acquire (1-40).
-        Default is all 40 channels.
     bandpass_type : Optional[str], optional
         Type of bandpass filter to apply. Options include 'Elliptic', 'Butterworth',
         or None to skip filtering. Default is None.
     bandpass_range : Optional[Tuple[float, float]], optional
         Bandpass filter frequency range in Hz as (f_low, f_high).
-        Default is (2000, 6000) Hz.
+        Default is (2000, 10000) Hz.
     """
 
     exp_id: str
+    spatial_cal: bool = False,
+    spatcal_exp_id: str = None
     time_range: Optional[Tuple[float, float]] = None
-    channels: List[int] = field(default_factory = lambda: list(range(1, 41)))
     bandpass_type: Optional[str] = None
     bandpass_range: Optional[Tuple[float, float]] = (2e3, 10e3)  # Hz
 
