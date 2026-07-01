@@ -6,6 +6,7 @@ import os
 import flap
 import numpy as np
 from scipy.interpolate import CubicSpline
+from scipy.signal import correlate
 from scipy.optimize import minimize, curve_fit
 from typing import List
 
@@ -18,6 +19,11 @@ def gaussian_func(x, x0, sigma, a, b):
 
 def parabolic_func(x, x0, a, b):
     return a * (x - x0)**2 + b
+
+# General 2 dimensional parabola parameterized with maxima
+def parabolic_func_2d(coords, t0, ch0, a, b, c, d):
+    t, ch = coords
+    return a * (t-t0)**2 + b * (ch-ch0)**2 + c * (t-t0)*(ch-ch0) + d
 
 class CorrelationAnalysis:
     """
@@ -132,6 +138,101 @@ class CorrelationAnalysis:
         ccf.get_coordinate_object('Time lag').start += data1.coordinate('Time')[0][0] - data0.coordinate('Time')[0][0]
         
         return ccf
+    
+    def ccf_2d_window_single(self, defl0, defl1):
+        
+        time_step = defl0.get_coordinate_object('Time').step[0]
+        channel_step = 1
+
+        time_dim_0 = defl0.get_coordinate_object('Time').dimension_list[0]
+        time_dim_1 = defl1.get_coordinate_object('Time').dimension_list[0]
+        n = min(defl0.data.shape[time_dim_0], defl1.data.shape[time_dim_1])
+
+        sl0 = [slice(None)] * defl0.data.ndim; sl0[time_dim_0] = slice(0, n)
+        sl1 = [slice(None)] * defl1.data.ndim; sl1[time_dim_1] = slice(0, n)
+        
+        data0 = defl0.data[tuple(sl0)]
+        data1 = defl1.data[tuple(sl1)]
+
+        data0_norm = (data0 - data0.mean()) / data0.std()
+        data1_norm = (data1 - data1.mean()) / data1.std()
+
+        ccf2d = correlate(data1_norm, data0_norm, mode='full') / data0.size
+
+        n_channel, n_time = data0_norm.shape
+        channel_lag = np.arange(-(n_channel - 1), n_channel) * channel_step
+        time_lag    = np.arange(-(n_time - 1), n_time) * time_step
+        
+        time_lag += defl1.coordinate('Time')[0].min() - defl0.coordinate('Time')[0].min()
+        time_mask = (time_lag >= self.config.xcorr_time_lag_interval[0]) & (time_lag <= self.config.xcorr_time_lag_interval[1])
+
+        # Convert to microseconds in time_lag
+        return ccf2d[:, time_mask], channel_lag, time_lag[time_mask]*1e6
+    
+    def fit_2d_parabola(self, time_lag, ch_lag, ccf_data):
+        
+        t_idx_window = 4
+        ch_idx_window = 2
+        
+        # ccf_data is laid out as (channel_lag, time_lag)
+        ch_max_idx, t_max_idx = np.unravel_index(np.argmax(ccf_data), ccf_data.shape)
+        t_idx_range = np.arange(t_max_idx - t_idx_window, t_max_idx + t_idx_window + 1)
+        ch_idx_range = np.arange(ch_max_idx - ch_idx_window, ch_max_idx + ch_idx_window + 1)
+        idx_sel = np.ix_(ch_idx_range, t_idx_range)
+
+        CH, T = np.meshgrid(ch_lag[ch_idx_range], time_lag[t_idx_range], indexing='ij')
+
+        popt, pcov = curve_fit(
+            parabolic_func_2d,
+            (T.ravel(), CH.ravel()),
+            ccf_data[idx_sel].ravel(),
+            p0 = [time_lag[t_max_idx], ch_lag[ch_max_idx], -1, -1, 0, ccf_data.max()],
+            )
+
+        perr = np.sqrt(np.diag(pcov))
+
+        return popt[0], popt[1], perr[0], perr[1]
+            
+    def get_max_lags_2d(self, times, ch_window):
+        
+        ch_range = np.arange(ch_window + 1, 40 - ch_window + 1)
+        
+        taumax_arr = np.zeros((len(times), len(ch_range)))
+        chmax_arr = np.zeros_like(taumax_arr)
+        tauerr_arr = np.zeros_like(taumax_arr)
+        cherr_arr = np.zeros_like(taumax_arr)
+        
+        for (i, t) in enumerate(times):
+            
+            defl0_time_slice = self.data_defl0.slice_data(
+                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
+            )
+            defl1_time_slice = self.data_defl1.slice_data(
+                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
+            )
+            
+            for (j, ch) in enumerate(ch_range):
+                
+                print(f'2D CCF: t = {t}, ch = {ch}')
+                
+                defl0_ch_slice = defl0_time_slice.slice_data(
+                    slicing = {'Channel number': flap.Intervals(ch - ch_window, ch + ch_window)}
+                )
+                
+                defl1_ch_slice = defl1_time_slice.slice_data(
+                    slicing = {'Channel number': flap.Intervals(ch - ch_window, ch + ch_window)}
+                )
+                
+                ccf2d, ch_lag, time_lag = self.ccf_2d_window_single(defl0_ch_slice, defl1_ch_slice)
+                taumax, chmax, tauerr, cherr = self.fit_2d_parabola(time_lag, ch_lag, ccf2d)
+                
+                taumax_arr[i, j] = taumax
+                chmax_arr[i, j] = chmax
+                tauerr_arr[i, j] = tauerr
+                cherr_arr[i, j] = cherr
+                
+        return ch_range, taumax_arr, chmax_arr, tauerr_arr, cherr_arr
+                
     
     def fit_gaussian(self, ccf):
         """
