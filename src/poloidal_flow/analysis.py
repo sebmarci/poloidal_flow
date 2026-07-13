@@ -139,6 +139,22 @@ class CorrelationAnalysis:
         
         return ccf
     
+    def acf_window_single(self, data):
+        
+        acf = data.ccf(
+            data, 
+            coordinate = 'Time',
+            options = {
+                'Interval_n': self.config.xcorr_interval,
+                'Resolution': self.config.xcorr_resolution,
+                'Normalize': self.config.xcorr_normalize,
+                'Range': list(self.config.xcorr_time_lag_interval),
+                'Trend removal': None
+            }
+        )
+        
+        return acf
+            
     def ccf_2d_window_single(self, defl0, defl1):
         
         time_step = defl0.get_coordinate_object('Time').step[0]
