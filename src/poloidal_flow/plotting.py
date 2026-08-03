@@ -139,13 +139,14 @@ class CCFPlotter:
 
             elif method == 'parabola':
                 tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
-                ind_max = np.argmax(ccf.data)
-                time_lag_slice = time_lags[ind_max-2:ind_max+3]
-                ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
-                ax.plot(ts_par, parabolic_func(ts_par, *popt),
-                       label='Parabola fit',
-                       color=kwargs.get('color', 'C1'),
-                       linewidth=kwargs.get('linewidth', 2))
+                if popt is not None:
+                    ind_max = np.argmax(np.abs(ccf.data))
+                    time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                    ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
+                    ax.plot(ts_par, parabolic_func(ts_par, *popt),
+                           label='Parabola fit',
+                           color=kwargs.get('color', 'C1'),
+                           linewidth=kwargs.get('linewidth', 2))
                 title_str = (f'Channel {channel}, t = {time:.2f} s\n'
                              f'$\\tau$ = {tau_max:.2f} $\\pm$ {tau_err:.2f} $\\mu$s')
 
@@ -284,10 +285,11 @@ class CCFPlotter:
                 ax.plot(ts, gaussian_func(ts, *popt), color='C1', linewidth=1.5)
             elif method == 'parabola':
                 tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
-                ind_max = np.argmax(ccf.data)
-                time_lag_slice = time_lags[ind_max-2:ind_max+3]
-                ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
-                ax.plot(ts_par, parabolic_func(ts_par, *popt), color='C1', linewidth=1.5)
+                if popt is not None:
+                    ind_max = np.argmax(np.abs(ccf.data))
+                    time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                    ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
+                    ax.plot(ts_par, parabolic_func(ts_par, *popt), color='C1', linewidth=1.5)
             else:
                 raise ValueError(f"Invalid method '{method}'. Must be 'gaussian', 'spline', or 'parabola'.")
 

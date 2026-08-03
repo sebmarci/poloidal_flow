@@ -131,7 +131,8 @@ class CorrelationAnalysis:
                 'Resolution': self.config.xcorr_resolution,
                 'Normalize': self.config.xcorr_normalize,
                 'Range': list(self.config.xcorr_time_lag_interval),
-                'Trend removal': None
+                'Trend removal': None,
+                'Verbose': False
             }
         )
         
@@ -140,6 +141,24 @@ class CorrelationAnalysis:
         return ccf
     
     def acf_window_single(self, data):
+        """
+        Compute autocorrelation function for a single time window.
+
+        Parameters
+        ----------
+        data : flap.DataObject
+            Data object containing signal
+
+        Returns
+        -------
+        acf : flap.DataObject
+            Autocorrelation function sliced to the relevant time lag range
+            (-100 to 120 microseconds by default).
+
+        Notes
+        -----
+        Uses FLAP's ccf method to compute normalized cross-correlation.
+        """
         
         acf = data.ccf(
             data, 
@@ -316,17 +335,31 @@ class CorrelationAnalysis:
     
     def fit_parabola(self, ccf):
         
-        time_lags = ccf.coordinate('Time lag')[0] * 1e6 
+        time_lags = ccf.coordinate('Time lag')[0] * 1e6
         ind_max = np.argmax(np.abs(ccf.data))
-        
+
+        # The 3-parameter parabola needs 2 samples on both sides of the peak. A
+        # peak at the edge of the retained time lag interval means the true
+        # maximum is most likely outside it, so no delay can be measured. The
+        # slices below would also be empty (negative start index wraps around).
+        if ind_max < 2 or ind_max > len(ccf.data) - 3:
+            print(f'CCF peak at time lag index {ind_max} of {len(ccf.data)} '
+                  '(edge of time lag interval), skipping parabola fit')
+            return np.nan, np.nan, np.nan, None
+
         time_lag_slice = time_lags[ind_max-2:ind_max+3]
         ccf_slice = ccf.data[ind_max-2:ind_max+3]
         ccf_err_slice = ccf.error[ind_max-2:ind_max+3]
-        
+
         # popt = [x0, a, b]
-        popt, pcov = curve_fit(parabolic_func, time_lag_slice, ccf_slice, sigma = ccf_err_slice)
+        try:
+            popt, pcov = curve_fit(parabolic_func, time_lag_slice, ccf_slice, sigma = ccf_err_slice)
+        except RuntimeError as err:
+            print(f'Parabola fit did not converge: {err}')
+            return np.nan, np.nan, np.nan, None
+
         perr = np.sqrt(np.diag(pcov))
-        
+
         return popt[0], perr[0], parabolic_func(popt[0], *popt), popt
     
     def get_max_time_lag(self, times, channels):
@@ -411,5 +444,50 @@ class CorrelationAnalysis:
                 corr_err_vals[i, j] = ccf_single.error[peak_idx] / ccf_single.data[peak_idx]
                             
         return tau_vals, tau_err_vals, corr_vals, corr_err_vals
+    
+    def get_max_time_lag_neighboring(self, times, ch0, ch1):
+        
+        tau_vals = np.zeros(len(times))
+        tau_err_vals = np.zeros_like(tau_vals)
+        corr_vals = np.zeros_like(tau_vals)
+        
+        defl0_channel_slice = self.data_defl0.slice_data(
+            slicing = {'Channel number': ch0}
+        )
+        
+        defl1_channel_slice = self.data_defl1.slice_data(
+            slicing = {'Channel number': ch1}
+        )
+        
+        for (i, t) in enumerate(times):
+        
+            defl0_time_slice = defl0_channel_slice.slice_data(
+                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
+            )
+            defl1_time_slice = defl1_channel_slice.slice_data(
+                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
+            )
             
+            time_dim_0 = defl0_time_slice.get_coordinate_object('Time').dimension_list[0]
+            time_dim_1 = defl1_time_slice.get_coordinate_object('Time').dimension_list[0]
+            n = min(defl0_time_slice.data.shape[time_dim_0],
+                    defl1_time_slice.data.shape[time_dim_1])
+
+            sl0 = [slice(None)] * defl0_time_slice.data.ndim
+            sl0[time_dim_0] = slice(0, n)
+            defl0_time_slice.data = defl0_time_slice.data[tuple(sl0)]
+            defl0_time_slice.shape = defl0_time_slice.data.shape
+
+            sl1 = [slice(None)] * defl1_time_slice.data.ndim
+            sl1[time_dim_1] = slice(0, n)
+            defl1_time_slice.data = defl1_time_slice.data[tuple(sl1)]
+            defl1_time_slice.shape = defl1_time_slice.data.shape
             
+            ccf = self.ccf_window_single(defl0_time_slice, defl1_time_slice)
+            tau, tau_err, corr, _ = self.fit_parabola(ccf)
+            
+            tau_vals[i] = tau
+            tau_err_vals[i] = tau_err
+            corr_vals[i] = corr
+                
+        return tau_vals, tau_err_vals, corr_vals
