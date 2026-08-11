@@ -6,9 +6,6 @@ Created on Wed Nov 19 10:28:07 2025
 @author: mive
 """
 
-import sys
-sys.path.append('/home/smarci/python_libs')
-
 from matplotlib import pyplot as plt
 import numpy as np
 

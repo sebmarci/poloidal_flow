@@ -21,9 +21,9 @@ device_r = np.array([
     spatcal.data['Device R'][spatcal.data['Channel name'] == f'ABES-{ch}'] for ch in np.arange(1, 41)
 ])[:, 0]
 
-r_lcfs = 6.232133974825017 # m
+r_lcfs = 6.25 # m
 
-savepath = os.path.abspath('plots/cpsd/20250409.046/ecrh_high')
+savepath = os.path.abspath('plots/cpsd/20250409.046/ecrh_low')
 
 ref_chs = np.arange(5, 20)
 channels = np.arange(1, 41)
@@ -32,11 +32,11 @@ defl0 = flap.load(f'pickled_shot_data/{exp_id}_raw_defl0.pkl')
 defl1 = flap.load(f'pickled_shot_data/{exp_id}_raw_defl1.pkl')
 
 defl0 = defl0.slice_data(
-    slicing = {'Time': flap.Intervals(6, 7)}
+    slicing = {'Time': flap.Intervals(2, 6)}
 )
 
 defl1 = defl1.slice_data(
-    slicing = {'Time': flap.Intervals(6, 7)}
+    slicing = {'Time': flap.Intervals(2, 6)}
 )
 
 lightprof = flap.load(
@@ -44,7 +44,7 @@ lightprof = flap.load(
 )
 
 lightprof_avg = lightprof.slice_data(
-    slicing = {'Time': flap.Intervals(6, 7)},
+    slicing = {'Time': flap.Intervals(2, 6)},
     summing = {'Time': 'Mean'}
 )
 

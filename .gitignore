@@ -1,6 +1,9 @@
 # Python cache
 __pycache__
 
+# VS code configs
+.vscode
+
 # Data products
 *.pkl
 *.txt

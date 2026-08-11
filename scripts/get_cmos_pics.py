@@ -1,6 +1,3 @@
-import sys
-sys.path.append('/home/smarci/python_libs')
-
 import flap_w7x_abes
 
 import os

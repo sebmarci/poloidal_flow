@@ -1,9 +1,6 @@
 # Process and fit CMOS beam axes
 
-import sys
-sys.path.append('/home/smarci/python_libs')
-
-from poloidal_flow.beam_axis.pipeline import CVPipeline
+from poloidal_flow.pipeline import CVPipeline
 import os
 import cv2
 import numpy as np

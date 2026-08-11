@@ -16,19 +16,21 @@ CALIBRATION_FACTOR_ERR = 0.01016466 # mm/V
 
 exp_id = sys.argv[1]
 xcorr_fitting_method = 'parabola'
-xcorr_window = 0.1 # 100 ms
-xcorr_interval = 50
+xcorr_window = 1 # 1 s
+xcorr_interval = 150
 bandpass_range = [2e3, 10e3]
 time_range = [0, 10]
 
 output_path = 'processed_data'
-output_file = f'{exp_id}_parabola.h5'
+output_file = f'{exp_id}.h5'
 
 config = ABESConfig(
-        exp_id = exp_id,
-        time_range = time_range,
-        bandpass_type = 'Butterworth',
-        bandpass_range = bandpass_range
+    exp_id = exp_id,
+    time_range = time_range,
+    bandpass_type = 'Butterworth',
+    bandpass_range = bandpass_range,
+    spatcal_exp_id = '20250409.046',
+    spatial_cal = False
 )
 
 xconfig = CorrelationConfig(
@@ -49,7 +51,7 @@ poloidal_separation_err = CALIBRATION_FACTOR_ERR * Udefl
 time_range = np.linspace(0, 10, 101)
 channels = np.arange(1, 41)
 
-tau, tau_err, corrs = anal.get_max_time_lag(time_range, channels)
+tau, tau_err, corrs, corr_err = anal.get_max_time_lag(time_range, channels)
 vpol = np.divide(poloidal_separation, tau, out = np.full_like(tau, np.nan), where = np.abs(tau) >= 1e-3)
 
 # Sum of squares error propagation: dv = sqrt[ (ds/t)^2 + (s/t^2 dt)^2 ]
@@ -82,6 +84,7 @@ with h5py.File(os.path.join(output_path, f'{exp_id}', output_file), 'w') as f:
     data.create_dataset('ccf_max_time_lags', data = tau)
     data.create_dataset('ccf_max_time_lag_err', data = tau_err)
     data.create_dataset('ccf_correlations', data = corrs)
+    data.create_dataset('ccf_max_relative_err', data = corr_err)
     data.create_dataset('poloidal_velocity', data = vpol)
     data.create_dataset('poloidal_velocity_err', data = vpol_err)
         

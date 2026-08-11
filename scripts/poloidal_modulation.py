@@ -8,10 +8,6 @@ import os
 import copy
 import numpy as np
 from matplotlib import pyplot as plt
-
-import sys
-sys.path.append('/home/smarci/python_libs/')
-
 import flap
 import flap_w7x_abes as w7x_abes
 
