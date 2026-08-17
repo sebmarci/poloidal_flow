@@ -445,49 +445,45 @@ class CorrelationAnalysis:
                             
         return tau_vals, tau_err_vals, corr_vals, corr_err_vals
     
-    def get_max_time_lag_neighboring(self, times, ch0, ch1):
+    def calculate_radial_correlation(self, defl, time, chref):
         
-        tau_vals = np.zeros(len(times))
-        tau_err_vals = np.zeros_like(tau_vals)
-        corr_vals = np.zeros_like(tau_vals)
+        data = self.data_defl0 if defl == 0 else self.data_defl1
+        ccf_points = []
         
-        defl0_channel_slice = self.data_defl0.slice_data(
-            slicing = {'Channel number': ch0}
+        ref_channel_slice = data.slice_data(
+            slicing = {'Channel number': chref}
         )
         
-        defl1_channel_slice = self.data_defl1.slice_data(
-            slicing = {'Channel number': ch1}
-        )
-        
-        for (i, t) in enumerate(times):
-        
-            defl0_time_slice = defl0_channel_slice.slice_data(
-                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
-            )
-            defl1_time_slice = defl1_channel_slice.slice_data(
-                slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
+        for ch in range(1, 41):
+            
+            channel_slice = data.slice_data(
+                slicing = {'Channel number': ch}
             )
             
-            time_dim_0 = defl0_time_slice.get_coordinate_object('Time').dimension_list[0]
-            time_dim_1 = defl1_time_slice.get_coordinate_object('Time').dimension_list[0]
-            n = min(defl0_time_slice.data.shape[time_dim_0],
-                    defl1_time_slice.data.shape[time_dim_1])
-
-            sl0 = [slice(None)] * defl0_time_slice.data.ndim
-            sl0[time_dim_0] = slice(0, n)
-            defl0_time_slice.data = defl0_time_slice.data[tuple(sl0)]
-            defl0_time_slice.shape = defl0_time_slice.data.shape
-
-            sl1 = [slice(None)] * defl1_time_slice.data.ndim
-            sl1[time_dim_1] = slice(0, n)
-            defl1_time_slice.data = defl1_time_slice.data[tuple(sl1)]
-            defl1_time_slice.shape = defl1_time_slice.data.shape
+            ccf = self.ccf_window_single(ref_channel_slice, channel_slice)
+            ccf_points.append(ccf.data)
             
-            ccf = self.ccf_window_single(defl0_time_slice, defl1_time_slice)
-            tau, tau_err, corr, _ = self.fit_parabola(ccf)
-            
-            tau_vals[i] = tau
-            tau_err_vals[i] = tau_err
-            corr_vals[i] = corr
+        return np.array(ccf_points)
+    
+    def fit_radial_velocity(self, defl, times, chref, chwindow, dev_r):
                 
-        return tau_vals, tau_err_vals, corr_vals
+        time_lags = np.arange(*self.config.xcorr_time_lag_interval, self.data_defl0.get_coordinate_object('Time').step[0])
+        radial_velocities = []
+        
+        for t in times:
+            
+            print(f't = {t} s')
+            
+            ccf_data = self.calculate_radial_correlation(defl, t, chref)
+            
+            maxidx = np.argmax(ccf_data, axis = 1)
+            max_t = time_lags[maxidx]
+
+            idx_fit = np.arange(chref - chwindow - 1, chref + chwindow)
+            r_fit = dev_r[idx_fit]
+            t_fit = max_t[idx_fit]
+            p = np.polyfit(r_fit, t_fit, 1)
+                        
+            radial_velocities.append(1 / p[0])
+            
+        return np.array(radial_velocities)

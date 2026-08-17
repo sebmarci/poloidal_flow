@@ -33,7 +33,7 @@ class ABESConfig:
     """
 
     exp_id: str
-    spatial_cal: bool = False,
+    spatial_cal: bool = False
     spatcal_exp_id: str = None
     time_range: Optional[Tuple[float, float]] = None
     bandpass_type: Optional[str] = None
