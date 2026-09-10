@@ -111,7 +111,8 @@ class CorrelationAnalysis:
     >>> analyzer = CorrelationAnalysis(data_defl0, data_defl1, corr_config)
     >>> tau, tau_err, tau0, corr = analyzer.get_max_time_lag_elliptical(
     ...     np.linspace(0, 10, 101), np.arange(1, 41))
-    >>> vpol, vpol_err = analyzer.get_velocity_elliptical(tau, tau_err, tau0)
+    >>> vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(
+    ...     tau, tau_err, tau0)
     """
 
     def __init__(self, data_defl0: flap.DataObject, data_defl1: flap.DataObject, config: CorrelationConfig):
@@ -558,8 +559,8 @@ class CorrelationAnalysis:
         outside the lag window, so a far spurious root is possible.
 
         Costs roughly 2-3x ``get_max_time_lag_taylor``, because of the two extra
-        correlations per point. Feed the results to ``get_velocity_elliptical``
-        and ``get_velocity_fading``.
+        correlations per point. Feed the results to ``get_velocity_elliptical``,
+        which returns both the convective and the fading velocity.
         """
 
         tau_vals = np.zeros((len(times), len(channels)))
@@ -676,19 +677,26 @@ class CorrelationAnalysis:
     
     def get_velocity_elliptical(self, tau, tau_err, tau0):
         """
-        Convective poloidal velocity in the elliptical approach.
+        Convective and fading velocity in the elliptical approach.
 
-        Implements equation (2) of Krämer-Flecken et al. 2025,
-        v_pol = s * dt / (dt^2 + tau_0^2), which reduces to the Taylor result
-        (equation 1) in the tau_0 -> 0 limit.
+        Implements equations (2) and (3) of Krämer-Flecken et al. 2025,
+
+            v_pol  = s * dt / (dt^2 + tau_0^2)
+            v_fade = s / sqrt(dt^2 + tau_0^2)
+
+        which share the fading time dt_f = sqrt(dt^2 + tau_0^2) of the paper:
+        the timescale on which the turbulence decorrelates, combining
+        propagation (dt) and decay (tau_0). `v_pol` reduces to the Taylor result
+        (equation 1) in the tau_0 -> 0 limit. `v_fade` carries no sign
+        information, since dt only enters it squared.
 
         Parameters
         ----------
         tau : numpy.ndarray
             CCF maximum time lags in microseconds.
         tau_err : numpy.ndarray
-            1-sigma uncertainties on `tau` in microseconds. Currently unused,
-            see Notes.
+            1-sigma uncertainties on `tau` in microseconds. Used for
+            `vfade_err` only, see Notes.
         tau0 : numpy.ndarray
             Fading timescales in microseconds, as returned by
             ``get_max_time_lag_elliptical``.
@@ -699,93 +707,51 @@ class CorrelationAnalysis:
             Convective poloidal velocity in km/s (mm/us), same shape as `tau`.
         vpol_err : numpy.ndarray
             Zero placeholder array, see Notes.
-
-        Notes
-        -----
-        Error propagation is not implemented: `tau0` has no uncertainty estimate,
-        so the dominant term of the propagated error is unavailable. The returned
-        `vpol_err` is a zero array, not a real error bar.
-        """
-
-        if not hasattr(self, 'poloidal_deflection'):
-            self.get_deflection_params()
-
-        # Eq. (2) of Krämer-Flecken et al. 2025: v_pol = s * dt / (dt^2 + tau_0^2).
-        # tau0 > 0 always, so the denominator only vanishes if both lags are 0.
-        vpol = self.poloidal_deflection * tau / (tau**2 + tau0**2)
-
-        # TODO IMPLEMENT ERROR PROPAGATION
-        vpol_err = np.zeros_like(vpol)
-
-        return vpol, vpol_err
-
-    def get_velocity_fading(self, tau, tau_err, tau0):
-        """
-        Fading velocity in the elliptical approach.
-
-        Implements equation (3) of Krämer-Flecken et al. 2025,
-        v_fade = s / sqrt(dt^2 + tau_0^2). The denominator is the fading time
-        dt_f of the paper: the timescale on which the turbulence decorrelates,
-        combining propagation (dt) and decay (tau_0). Unlike `v_pol` it carries
-        no sign information, since dt only enters squared.
-
-        Parameters
-        ----------
-        tau : numpy.ndarray
-            CCF maximum time lags in microseconds.
-        tau_err : numpy.ndarray
-            1-sigma uncertainties on `tau` in microseconds.
-        tau0 : numpy.ndarray
-            Fading timescales in microseconds, as returned by
-            ``get_max_time_lag_elliptical``.
-
-        Returns
-        -------
         vfade : numpy.ndarray
-            Fading velocity in km/s (mm/us), same shape as `tau`. Points with a
-            fading time below 1e-3 us are set to nan.
+            Fading velocity in km/s, same shape.
         vfade_err : numpy.ndarray
             1-sigma uncertainty on `vfade` in km/s. Incomplete, see Notes.
 
         Notes
         -----
-        The propagated error contains the beam separation and `tau` terms only.
-        The `tau0` term is missing because `tau0` has no uncertainty estimate,
-        so `vfade_err` is a lower bound on the true uncertainty.
+        The two velocities are returned together because they are two readings
+        of the same fit and differ only in how the fading time enters.
+
+        `tau0` is strictly positive, so the fading time cannot vanish and the
+        divisions need no zero guard, unlike the one in ``get_velocity_taylor``.
+        A `nan` `tau` still propagates into both velocities.
+
+        Neither error is complete, because `tau0` has no uncertainty estimate.
+        For `v_pol` that term is the dominant one, so no propagation is
+        attempted at all and `vpol_err` is a zero array rather than a real error
+        bar. For `v_fade` the beam separation and `tau` terms are propagated,
+        which makes `vfade_err` a lower bound on the true uncertainty.
         """
 
         if not hasattr(self, 'poloidal_deflection'):
             self.get_deflection_params()
 
-        # Eq. (3) of Krämer-Flecken et al. 2025: v_fade = s / sqrt(dt^2 + tau_0^2)
+        # tau0 is strictly positive, so the fading time cannot vanish and none
+        # of the divisions below need the np.divide guard get_velocity_taylor has.
         fading_time = np.sqrt(tau**2 + tau0**2)
 
-        vfade = np.divide(
-            self.poloidal_deflection,
-            fading_time,
-            out = np.full_like(fading_time, np.nan),
-            where = fading_time >= 1e-3
-        )
+        # Eq. (2): v_pol = s * dt / (dt^2 + tau_0^2)
+        vpol = self.poloidal_deflection * tau / fading_time**2
 
-        # Sum of squares error propagation with dtf = sqrt(dt^2 + tau_0^2):
+        # TODO IMPLEMENT ERROR PROPAGATION
+        vpol_err = np.zeros_like(vpol)
+
+        # Eq. (3): v_fade = s / sqrt(dt^2 + tau_0^2)
+        vfade = self.poloidal_deflection / fading_time
+
+        # Sum of squares error propagation:
         # dv = sqrt[ (ds/dtf)^2 + (s dt/dtf^3 ddt)^2 ]. The tau_0 term is absent.
-        vfade_err_1 = np.divide(
-            self.poloidal_deflection_err,
-            fading_time,
-            out = np.full_like(fading_time, np.nan),
-            where = fading_time >= 1e-3
-        )
-
-        vfade_err_2 = np.divide(
-            self.poloidal_deflection * tau * tau_err,
-            fading_time**3,
-            out = np.full_like(fading_time, np.nan),
-            where = fading_time >= 1e-3
-        )
+        vfade_err_1 = self.poloidal_deflection_err / fading_time
+        vfade_err_2 = self.poloidal_deflection * tau * tau_err / fading_time**3
 
         vfade_err = np.sqrt(vfade_err_1**2 + vfade_err_2**2)
 
-        return vfade, vfade_err
+        return vpol, vpol_err, vfade, vfade_err
 
 
     # --- THE FOLLOWING FUNCTIONS ARE UNUSED AND/OR DEPRECATED ---
