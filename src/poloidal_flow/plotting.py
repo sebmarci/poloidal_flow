@@ -1,5 +1,10 @@
 """
 Visualization utilities for cross-correlation function analysis.
+
+Diagnostic plots of the CCFs a `CorrelationAnalysis` computes: the data with its
+error band, the fitted peak and the resulting time lag, for one channel or for
+all 40 at once. Useful for checking that the lag interval, the bandpass and the
+fit behave before running a whole shot through the analysis.
 """
 
 import numpy as np
@@ -23,6 +28,25 @@ class CCFPlotter:
     ----------
     analyzer : CorrelationAnalysis
         Reference to the correlation analysis instance.
+
+    Notes
+    -----
+    The CCFs are recomputed here rather than taken from the analysis results, so
+    the window, lag interval and subinterval count all follow the analyzer's
+    configuration.
+
+    This is the only remaining caller of the deprecated ``fit_gaussian`` and
+    ``fit_cubic_spline`` methods. The fitting method is chosen per call and is
+    independent of ``config.xcorr_fitting_method``.
+
+    Both methods call ``ccf_window_single(defl0, defl1)``, the opposite argument
+    order from the ``get_max_time_lag_*`` methods, so the plotted time lags come
+    out with the opposite sign to the analysed ones.
+
+    Examples
+    --------
+    >>> plotter = CCFPlotter(analyzer)
+    >>> fig, ax = plotter.plot_single(time=7.0, channel=20, method='parabola')
     """
 
     def __init__(self, analyzer: CorrelationAnalysis):
@@ -37,26 +61,23 @@ class CCFPlotter:
         **kwargs
     ) -> Tuple[plt.Figure, plt.Axes]:
         """
-        Plot cross-correlation function for a single channel at a given time.
+        Plot the cross-correlation function of a single channel at a given time.
 
         Parameters
         ----------
         time : float
-            Time point in seconds for the analysis window center.
+            Centre of the analysis window in seconds.
         channel : int
             ABES channel number (1-40).
-        method : {'gaussian', 'spline'}, default='gaussian'
-            Fitting method to visualize.
-        ax : matplotlib.axes.Axes, optional
-            Axes object to plot on. If None, creates a new figure.
+        method : {'gaussian', 'spline', 'parabola'}, default='gaussian'
+            Peak fitting method to visualize.
         show_fit : bool, default=True
-            Whether to show the fitted curve.
-        show_peak : bool, default=True
-            Whether to mark the peak position.
-        show_error : bool, default=False
-            Whether to show fit error for Gaussian method.
+            Whether to fit and draw the peak. When False only the CCF data is
+            plotted.
         **kwargs
-            Additional keyword arguments passed to matplotlib plotting functions.
+            Plot styling overrides: 'alpha', 'error_alpha', 'color',
+            'linewidth', 'peak_size', 'grid', 'fontsize', 'title_fontsize',
+            'legend_fontsize'.
 
         Returns
         -------
@@ -65,13 +86,21 @@ class CCFPlotter:
         ax : matplotlib.axes.Axes
             Axes object with the plot.
 
+        Raises
+        ------
+        ValueError
+            If `method` is not one of the three listed above.
+
         Notes
         -----
-        The plot displays:
-        - Scatter points: Raw CCF data
-        - Solid line: Fitted curve (Gaussian or cubic spline)
-        - Marker: Peak position with maximum correlation value
-        - Title: Channel number, time point, and time delay
+        The plot displays the CCF data with a shaded +/-1-sigma error band, the
+        fitted curve, and the peak position as a red marker with a vertical
+        line; for 'parabola' the peak also carries a horizontal error bar. The
+        title repeats the channel, time and fitted time lag.
+
+        The window is sliced with linear interpolation, and the two deflection
+        states are not truncated to a common sample count as they are in the
+        analysis.
         """
         # Create figure if not provided
         fig, ax = plt.subplots(figsize = (8, 6))
@@ -196,41 +225,48 @@ class CCFPlotter:
         **kwargs
     ) -> Tuple[plt.Figure, np.ndarray]:
         """
-        Plot cross-correlation functions for multiple channels at a single time point.
+        Plot the cross-correlation functions of many channels at one time point.
 
         Parameters
         ----------
         time : float
-            Time point in seconds for the analysis window center.
-        method : {'gaussian', 'spline'}, default='spline'
-            Fitting method to use for all plots.
+            Centre of the analysis window in seconds.
+        method : {'gaussian', 'spline', 'parabola'}, default='spline'
+            Peak fitting method to use in every subplot.
         channels : range, optional
-            Range of channel numbers to plot. Default is range(1, 41) for all 40 channels.
+            Channel numbers to plot. Default is ``range(1, 41)``, all 40
+            channels.
         figsize : tuple, default=(40, 40)
             Figure size as (width, height) in inches.
         nrows : int, default=8
             Number of subplot rows.
         ncols : int, default=5
-            Number of subplot columns.
+            Number of subplot columns. ``nrows * ncols`` must be at least
+            ``len(channels)``.
         **kwargs
-            Additional keyword arguments for plot customization.
+            Plot styling overrides: 'suptitle_fontsize'.
 
         Returns
         -------
         fig : matplotlib.figure.Figure
             Figure object.
         axes : numpy.ndarray
-            Array of axes objects for each subplot.
+            2D array of the subplot axes, including the unused ones, which are
+            turned off.
+
+        Raises
+        ------
+        ValueError
+            If `method` is not one of the three listed above.
 
         Notes
         -----
-        Creates a subplot grid (default 8x5 for 40 channels) where each subplot shows:
-        - Scatter plot of CCF data points
-        - Fitted curve (spline or Gaussian)
-        - Peak position marker and vertical line
-        - Time delay value in the subplot title
+        One subplot per channel, each showing the CCF data with its error band,
+        the fitted curve, the peak marker and the fitted time lag in the
+        subplot title. The figure title repeats the method and time point.
 
-        The main figure title indicates the fitting method and time point.
+        The time window is sliced once for all channels, then per channel, which
+        is the faster order.
         """
         if channels is None:
             channels = range(1, 41)

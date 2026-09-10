@@ -1,5 +1,11 @@
 """
 ABES data acquisition and preprocessing module.
+
+Turns a W7-X shot into the pair of background-subtracted, filtered
+`flap.DataObject`s that `CorrelationAnalysis` consumes, one per deflection
+state. The APD system sees plasma light and beam light together, so the beam is
+chopped: each deflection state is measured in beam-on periods and the
+interleaved beam-off periods give the background to subtract.
 """
 
 import flap
@@ -27,6 +33,18 @@ class ABESDataReader:
         The configuration object.
     channel_names : List[str]
         List of channel names in 'ABES-{ch}' format for FLAP data acquisition.
+    raw_data : flap.DataObject
+        Cached raw signals. Set on first use by ``read_data_raw``.
+    on_timings : List[flap.DataObject]
+        Cached beam-on chopper timings, indexed by deflection state. Set on
+        first use by ``read_timings``.
+    off_timings : flap.DataObject
+        Cached beam-off chopper timings.
+
+    Notes
+    -----
+    The raw data and the timings are fetched once and cached on the instance, so
+    reading both deflection states costs a single data acquisition.
 
     Examples
     --------
@@ -43,20 +61,26 @@ class ABESDataReader:
         """
         Read and process ABES data for both deflection states.
 
-        Acquires raw data, performs background subtraction, and applies filtering
-        for both deflection states (0 and 1) as configured.
+        The full pipeline: acquire raw signals, subtract the chopper background,
+        and bandpass filter if configured.
 
         Returns
         -------
         d_defl0 : flap.DataObject
-            Background-subtracted and filtered data for deflection state 0.
+            Background-subtracted and filtered data for deflection state 0,
+            shape ``(40 channels, n_samples)``.
         d_defl1 : flap.DataObject
-            Background-subtracted and filtered data for deflection state 1.
+            The same for deflection state 1.
 
         Notes
         -----
-        This method calls `background_subtraction` for each deflection state
-        and applies bandpass filtering if configured.
+        Thin wrapper over two ``background_subtraction`` calls, which is also
+        where the filtering happens. Use that method directly to inspect the
+        intermediate beam-on and beam-off signals.
+
+        The two returned objects have slightly different time grids, since the
+        two deflection states are measured in interleaved chopper periods, and
+        may differ by one sample in length.
         """
         
         _, _, d_defl0 = self.background_subtraction(deflection = 0)
@@ -66,15 +90,17 @@ class ABESDataReader:
             
     def read_data_raw(self):
         """
-        Read raw ABES signals from W7-X diagnostic system.
+        Read the raw ABES signals of all 40 channels from the W7-X archive.
 
-        Stores the result in ``self.raw_data``. Called automatically by
-        ``background_subtraction`` if raw data has not been loaded yet.
+        Stores the result in ``self.raw_data`` and returns nothing. Called
+        automatically by ``background_subtraction`` if the raw data has not been
+        loaded yet.
 
         Notes
         -----
-        Uses FLAP's W7X_ABES data source to acquire raw signals without
-        any processing. Channel names and time range are taken from the
+        Uses FLAP's W7X_ABES data source to acquire the signals without any
+        processing: beam-on, beam-off and both deflection states are still
+        interleaved at this point. Channel names and time range come from the
         configuration object.
         """
                 
@@ -90,16 +116,19 @@ class ABESDataReader:
 
     def read_timings(self):
         """
-        Read beam on/off timing information for both deflection states.
+        Read the chopper timings for both deflection states.
 
-        Stores results in ``self.on_timings`` (list indexed by deflection state)
-        and ``self.off_timings``. Called automatically by ``background_subtraction``
-        if timings have not been loaded yet.
+        Stores the beam-on intervals in ``self.on_timings``, a list indexed by
+        deflection state, and the beam-off intervals in ``self.off_timings``.
+        Returns nothing. Called automatically by ``background_subtraction`` if
+        the timings have not been loaded yet.
 
         Notes
         -----
-        Fetches chopper timings for both deflection states (Defl=0 and Defl=1)
-        and the beam-off periods (Chop=1) in a single call.
+        Three FLAP requests for the 'Chopper_time' signal: beam-on with the
+        deflection in state 0 and in state 1 (``Chop: 0, Defl: 0/1``), and the
+        common beam-off periods (``Chop: 1``). The returned objects are interval
+        descriptors used to slice ``raw_data`` on its 'Sample' coordinate.
         """
         
         defl0_timings = flap.get_data(
@@ -134,20 +163,23 @@ class ABESDataReader:
          
     def read_spatial_calibration(self):
         """
-        Read spatial calibration data for ABES channels.
+        Read the radial position of each ABES channel.
 
         Returns
         -------
         dev_r : numpy.ndarray
-            Device R coordinates (major radius) for channels 1-40,
-            as a 1D array of length 40.
+            Device R coordinate (major radius) in m for channels 1-40, as a 1D
+            array of length 40, ordered by channel number.
 
         Notes
         -----
-        Uses the flap_w7x_abes.ShotSpatCal class to retrieve spatial
-        calibration information. The calibration shot is taken from
-        ``config.spatcal_exp_id`` when set, otherwise it falls back to
-        ``config.exp_id``. Coordinates are in the device coordinate system.
+        Uses ``flap_w7x_abes.ShotSpatCal``. The calibration shot is
+        ``config.spatcal_exp_id`` when set, otherwise ``config.exp_id`` — the
+        calibration is not repeated every shot, so pointing several shots at one
+        calibration is normal.
+
+        Called by ``background_subtraction`` when ``config.spatial_cal`` is True,
+        which attaches the result as a 'Device R' coordinate.
         """
         
         channels = np.arange(1, 41)
@@ -165,23 +197,25 @@ class ABESDataReader:
         
     def apply_bandpass(self, dataobject: flap.DataObject):
         """
-        Apply bandpass filter to ABES signal data.
+        Apply the configured bandpass filter to ABES signal data.
 
         Parameters
         ----------
         dataobject : flap.DataObject
-            Input data to be filtered.
+            Input data to be filtered, typically background-subtracted signals.
 
         Returns
         -------
         d_bandpass : flap.DataObject
-            Filtered data with the same structure as input.
+            Filtered data with the same structure as the input.
 
         Notes
         -----
-        Filter type and frequency range are taken from the configuration.
-        Common filter types include 'Elliptic' and 'Butterworth'.
-        The filter is applied along the 'Time' coordinate.
+        Filter design (`bandpass_type`, e.g. 'Butterworth' or 'Elliptic') and
+        corner frequencies (`bandpass_range`) come from the configuration; the
+        filter runs along the 'Time' coordinate. The band selects the turbulent
+        fluctuations the correlation analysis works on, so it has to sit above
+        the chopping frequency and below the noise floor.
         """
         
         d_bandpass = dataobject.filter_data(
@@ -198,38 +232,44 @@ class ABESDataReader:
                 
     def background_subtraction(self, deflection: int):
         """
-        Perform background subtraction on ABES signals.
+        Subtract the chopper background from one deflection state.
 
-        Acquires raw signals, separates beam-on and beam-off periods using
-        chopper timing, interpolates the beam-off signal, and subtracts it
-        from the beam-on signal to remove background light.
+        The APDs see beam light plus plasma background light. The beam-off
+        chopper periods measure the background alone, so interpolating them onto
+        the beam-on time points and subtracting leaves the beam light.
 
         Parameters
         ----------
         deflection : int
-            State of poloidal deflection modulation. Must be 0 or 1.
+            State of the poloidal deflection modulation. Must be 0 or 1.
 
         Returns
         -------
         d_beam_on : flap.DataObject
-            Raw beam-on signal data.
+            Beam-on signal, one sample per chopper period.
         d_beam_off : flap.DataObject
-            Raw beam-off signal data (background).
+            Beam-off signal (background), one sample per chopper period.
         d_backsub : flap.DataObject
-            Background-subtracted signal data, with bandpass filter applied
-            if configured.
+            Background-subtracted signal, bandpass filtered if configured. A
+            newly built DataObject with 'Time', 'Channel number' and, when
+            ``config.spatial_cal`` is set, 'Device R' coordinates.
 
         Notes
         -----
         The background subtraction algorithm:
-        1. Loads raw data and chopper timings (both deflection states) if not
+        1. Load raw data and chopper timings (both deflection states) if not
            already cached on the instance
-        2. Slices data into beam-on and beam-off periods
-        3. Averages samples within each chopper period
-        4. Interpolates beam-off signal to beam-on time points using linear
-           interpolation (``numpy.interp``)
-        5. Subtracts interpolated background from beam-on signal
-        6. Applies bandpass filter if configured
+        2. Slice the data into beam-on and beam-off periods
+        3. Average the samples within each chopper period, which sets the time
+           resolution of the result to one chopper period
+        4. Interpolate the beam-off signal onto the beam-on time points
+           (``numpy.interp``, linear)
+        5. Subtract the interpolated background from the beam-on signal
+        6. Apply the bandpass filter if configured
+
+        The time coordinate of the result is rebuilt as equidistant from the
+        mean spacing of the beam-on periods, so it is uniform even though the
+        chopper periods are not exactly evenly spaced.
         """
         
         if not hasattr(self, 'raw_data'):
