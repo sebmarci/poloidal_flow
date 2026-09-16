@@ -18,6 +18,5 @@ __pycache__
 *.jpg
 *.jpeg
 
-# Claude
-CLAUDE.md
+# Claude context
 claude_context/
