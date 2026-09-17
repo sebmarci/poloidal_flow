@@ -30,13 +30,14 @@ from scipy.interpolate import CubicSpline
 from scipy.signal import correlate
 from scipy.optimize import minimize, curve_fit, fsolve
 from typing import List
+from uncertainties import ufloat
+from uncertainties import unumpy as unp
 
 import matplotlib.pyplot as plt
 
 from .config import CorrelationConfig
 
-CALIBRATION_FACTOR = 0.09477279 # mm/V
-CALIBRATION_FACTOR_ERR = 0.01016466 # mm/V
+CALIBRATION_FACTOR = ufloat(0.09477279, 0.01016466) # mm/V
 
 def gaussian_func(x, x0, sigma, a, b):
     """Gaussian with peak position `x0`, width `sigma`, amplitude `a`, offset `b`."""
@@ -83,15 +84,15 @@ class CorrelationAnalysis:
         Signal data for the two deflection states.
     config : CorrelationConfig
         Configuration parameters.
-    calibration_factor, calibration_factor_err : float
-        Copies of the module-level beam deflection calibration, mm/V.
+    calibration_factor : uncertainties.ufloat
+        Copy of the module-level beam deflection calibration, mm/V.
     fitting_methods : dict
         Maps method names to the corresponding peak fitting methods.
     fitting_method : callable
         The peak fitting method selected by ``config.xcorr_fitting_method``.
     deflection_voltage : float
         Chopper deflection voltage in V. Set by ``get_deflection_params``.
-    poloidal_deflection, poloidal_deflection_err : float
+    poloidal_deflection : uncertainties.ufloat
         Poloidal beam separation `s` and its uncertainty in mm. Set by
         ``get_deflection_params``.
 
@@ -109,10 +110,9 @@ class CorrelationAnalysis:
     Examples
     --------
     >>> analyzer = CorrelationAnalysis(data_defl0, data_defl1, corr_config)
-    >>> tau, tau_err, tau0, tau0_err, corr = analyzer.get_max_time_lag_elliptical(
+    >>> tau, tau0, corr = analyzer.get_max_time_lag_elliptical(
     ...     np.linspace(0, 10, 101), np.arange(1, 41))
-    >>> vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(
-    ...     tau, tau_err, tau0, tau0_err)
+    >>> vpol, vfade = analyzer.get_velocity_elliptical(tau, tau0)
     """
 
     def __init__(self, data_defl0: flap.DataObject, data_defl1: flap.DataObject, config: CorrelationConfig):
@@ -122,7 +122,6 @@ class CorrelationAnalysis:
         self.data_defl1 = data_defl1
         self.config = config
         self.calibration_factor = CALIBRATION_FACTOR
-        self.calibration_factor_err = CALIBRATION_FACTOR_ERR
         
         self.fitting_methods = {
             'gaussian': self.fit_gaussian,
@@ -141,8 +140,8 @@ class CorrelationAnalysis:
 
         Sets ``deflection_voltage`` (the top minus bottom chopper plate voltage,
         V) and turns it into the poloidal beam separation `s` with the
-        module-level calibration, storing ``poloidal_deflection`` and
-        ``poloidal_deflection_err`` in mm.
+        module-level calibration, storing it as the ``ufloat``
+        ``poloidal_deflection`` in mm.
 
         Notes
         -----
@@ -168,7 +167,6 @@ class CorrelationAnalysis:
         
         self.deflection_voltage = voltage_top - voltage_bottom
         self.poloidal_deflection = CALIBRATION_FACTOR * self.deflection_voltage
-        self.poloidal_deflection_err = CALIBRATION_FACTOR_ERR * self.deflection_voltage
     
     def truncate_data(self, data0, data1):
         """
@@ -319,10 +317,11 @@ class CorrelationAnalysis:
 
         Notes
         -----
-        Deprecated: this 3-tuple is incompatible with the 5-value unpacking in
-        the ``get_max_time_lag_*`` methods, so selecting 'gaussian' in
-        `CorrelationConfig` breaks them. Kept because `CCFPlotter` can still
-        draw it. Use ``fit_parabola`` instead.
+        Deprecated: unlike ``fit_parabola`` this returns plain floats with no
+        uncertainty, so selecting 'gaussian' in `CorrelationConfig` silently
+        drops the error propagation the ``get_max_time_lag_*`` methods rely on.
+        Kept because `CCFPlotter` can still draw it. Use ``fit_parabola``
+        instead.
 
         Fits over the full retained lag range with initial guess
         ``[0, 30, 1, 0]`` and gives no uncertainty on the peak position.
@@ -355,8 +354,8 @@ class CorrelationAnalysis:
 
         Notes
         -----
-        Deprecated for the same reason as ``fit_gaussian``: a 3-tuple return and
-        no peak uncertainty. Kept for `CCFPlotter` only.
+        Deprecated for the same reason as ``fit_gaussian``: no peak uncertainty
+        is returned. Kept for `CCFPlotter` only.
 
         The peak is found by ``scipy.optimize.minimize`` on the negated spline
         starting from zero lag, so it can settle on a local maximum.
@@ -382,18 +381,13 @@ class CorrelationAnalysis:
 
         Returns
         -------
-        tau : float
-            Peak position (time delay) in microseconds, or nan if no fit was
-            possible.
-        tau_err : float
-            1-sigma uncertainty on `tau` in microseconds, from the fit
-            covariance, or nan.
-        ccf_max : float
-            Fitted parabola value at the peak, or nan.
-        ccf_max_err : float
-            1-sigma uncertainty on `ccf_max`, from the fit covariance, or nan.
-            Needed by ``get_max_time_lag_elliptical`` to propagate the CCF peak
-            value into the uncertainty of ``tau_0``.
+        tau : uncertainties.ufloat
+            Peak position (time delay) in microseconds, from the fit
+            covariance, or ``ufloat(nan, nan)`` if no fit was possible.
+        ccf_max : uncertainties.ufloat
+            Fitted parabola value at the peak, from the fit covariance, or
+            ``ufloat(nan, nan)``. Needed by ``get_max_time_lag_elliptical`` to
+            propagate the CCF peak value into the uncertainty of ``tau_0``.
         popt : numpy.ndarray or None
             Fit parameters ``[x0, a, b]`` of ``parabolic_func``, or None if no
             fit was possible.
@@ -405,9 +399,11 @@ class CorrelationAnalysis:
         methods this yields a propagated uncertainty on the peak position.
 
         The parabola is parameterized by its extremum, so the peak value is
-        identically the fit parameter `b` and `ccf_max_err` is just its
-        standard error. The correlation between `tau` and `ccf_max`
-        (``pcov[0, 2]``) is not returned; see `error_propagation.md`.
+        identically the fit parameter `b` and its standard error becomes
+        `ccf_max.std_dev`. The correlation between `tau` and `ccf_max`
+        (``pcov[0, 2]``) is not captured — `tau` and `ccf_max` are independent
+        `ufloat`s, not a `uncertainties.correlated_values` pair; see
+        `error_propagation.md`.
 
         Two cases return all-nan (with `popt` None) instead of raising: a peak
         within 2 samples of the edge of the retained lag interval, which means
@@ -429,7 +425,7 @@ class CorrelationAnalysis:
         if ind_max < 2 or ind_max > len(ccf.data) - 3:
             print(f'CCF peak at time lag index {ind_max} of {len(ccf.data)} '
                   '(edge of time lag interval), skipping parabola fit')
-            return np.nan, np.nan, np.nan, np.nan, None
+            return ufloat(np.nan, np.nan), ufloat(np.nan, np.nan), None
 
         time_lag_slice = time_lags[ind_max-2:ind_max+3]
         ccf_slice = ccf.data[ind_max-2:ind_max+3]
@@ -440,13 +436,16 @@ class CorrelationAnalysis:
             popt, pcov = curve_fit(parabolic_func, time_lag_slice, ccf_slice, sigma = ccf_err_slice)
         except RuntimeError as err:
             print(f'Parabola fit did not converge: {err}')
-            return np.nan, np.nan, np.nan, np.nan, None
+            return ufloat(np.nan, np.nan), ufloat(np.nan, np.nan), None
 
         perr = np.sqrt(np.diag(pcov))
 
         # popt[2] / perr[2] is the peak value b and its error: the parabola is
         # parameterized by its extremum, so parabolic_func(x0, *popt) == b.
-        return popt[0], perr[0], parabolic_func(popt[0], *popt), perr[2], popt
+        tau = ufloat(popt[0], perr[0])
+        ccf_max = ufloat(parabolic_func(popt[0], *popt), perr[2])
+
+        return tau, ccf_max, popt
     
     def get_max_time_lag_taylor(self, times, channels):
         """
@@ -464,11 +463,11 @@ class CorrelationAnalysis:
         Returns
         -------
         tau_vals : numpy.ndarray
-            2D array of time delays in microseconds with shape (len(times), len(channels)).
-        tau_err_vals : numpy.ndarray
-            2D array of 1-sigma uncertainties on the time delays, same shape.
+            Object array of ``ufloat`` time delays (microseconds) with shape
+            (len(times), len(channels)).
         corr_vals : numpy.ndarray
-            2D array of correlation values at the peaks with shape (len(times), len(channels)).
+            Object array of ``ufloat`` correlation values at the peaks, same
+            shape.
 
         Notes
         -----
@@ -485,9 +484,8 @@ class CorrelationAnalysis:
         printed to stdout as "t = {time} s, ch = {channel}".
         """
                                 
-        tau_vals = np.zeros((len(times), len(channels)))
-        tau_err_vals = np.zeros_like(tau_vals)
-        corr_vals = np.zeros_like(tau_vals)
+        tau_vals = np.empty((len(times), len(channels)), dtype=object)
+        corr_vals = np.empty_like(tau_vals)
 
         for (i, t) in enumerate(times):
 
@@ -497,29 +495,28 @@ class CorrelationAnalysis:
             defl1_time_slice = self.data_defl1.slice_data(
                 slicing = {'Time': flap.Intervals(t - self.config.xcorr_window/2, t + self.config.xcorr_window/2)},
             )
-            
+
             self.truncate_data(defl0_time_slice, defl1_time_slice)
-                        
+
             for (j, ch) in enumerate(channels):
-                
+
                 print(f't = {t} s, ch = {ch}')
-                                
+
                 defl0_single = defl0_time_slice.slice_data(
                     slicing = {'Channel number': ch}
                 )
                 defl1_single = defl1_time_slice.slice_data(
                     slicing = {'Channel number': ch}
                 )
-                
+
                 ccf = self.ccf_window_single(defl1_single, defl0_single)
-                tau, tau_err, corr, _, _ = self.fitting_method(ccf)
+                tau, corr, _ = self.fitting_method(ccf)
 
                 tau_vals[i, j] = tau
-                tau_err_vals[i, j] = tau_err
                 corr_vals[i, j] = corr
 
-        return tau_vals, tau_err_vals, corr_vals
-    
+        return tau_vals, corr_vals
+
     def get_max_time_lag_elliptical(self, times, channels):
         """
         CCF time lags and fading timescales for a grid of windows and channels.
@@ -538,18 +535,18 @@ class CorrelationAnalysis:
         Returns
         -------
         tau_vals : numpy.ndarray
-            CCF maximum time lags in microseconds, shape
-            ``(len(times), len(channels))``.
-        tau_err_vals : numpy.ndarray
-            1-sigma uncertainties on the time lags, same shape.
+            Object array of ``ufloat`` CCF maximum time lags in microseconds,
+            shape ``(len(times), len(channels))``.
         tau0_vals : numpy.ndarray
-            Fading timescales `tau_0` in microseconds, same shape. Always
-            positive: the ACF is symmetric and only ``tau_0^2`` is physical.
-        tau0_err_vals : numpy.ndarray
-            1-sigma uncertainties on `tau_0` in microseconds, same shape. A
-            first order estimate neglecting one covariance, see Notes.
+            Object array of ``ufloat`` fading timescales `tau_0` in
+            microseconds, same shape. The nominal value is always positive:
+            the ACF is symmetric and only ``tau_0^2`` is physical. Unlike
+            `tau_vals`, `tau0`'s nominal value and uncertainty are *not*
+            propagated by `uncertainties` arithmetic — see Notes — they are
+            only wrapped into a `ufloat` afterwards so `tau0` can be combined
+            with `tau` automatically downstream (`get_velocity_elliptical`).
         corr_vals : numpy.ndarray
-            CCF values at the peaks, same shape.
+            Object array of ``ufloat`` CCF values at the peaks, same shape.
 
         Raises
         ------
@@ -566,8 +563,11 @@ class CorrelationAnalysis:
         3. Compute the CCF and fit the peak, giving `dt` and `corr`
         4. Cubic-spline the mean ACF and solve ``ACF(tau_0) = corr`` for `tau_0`
 
-        The uncertainty on `tau_0` is the first order propagation of that
-        equation. Both the ACF curve and the crossing level `corr` are
+        `tau_0` and its uncertainty are computed by hand, not via
+        `uncertainties` propagation: they come from an ``fsolve`` root-find
+        through a `CubicSpline`, which `uncertainties` cannot differentiate
+        through automatically. The uncertainty is the first order propagation
+        of that equation. Both the ACF curve and the crossing level `corr` are
         uncertain, and implicit differentiation of ``ACF(tau_0) - corr = 0``
         gives both terms the same ``1 / ACF'(tau_0)`` sensitivity::
 
@@ -594,12 +594,10 @@ class CorrelationAnalysis:
         which returns both the convective and the fading velocity.
         """
 
-        tau_vals = np.zeros((len(times), len(channels)))
-        tau_err_vals = np.zeros_like(tau_vals)
-        corr_vals = np.zeros_like(tau_vals)
-        tau0_vals = np.zeros_like(tau_vals)
-        tau0_err_vals = np.zeros_like(tau_vals)
-        
+        tau_vals = np.empty((len(times), len(channels)), dtype=object)
+        corr_vals = np.empty_like(tau_vals)
+        tau0_vals = np.empty_like(tau_vals)
+
         for (i, t) in enumerate(times):
         
             defl0_time_slice = self.data_defl0.slice_data(
@@ -626,7 +624,13 @@ class CorrelationAnalysis:
                 acf_err_mean = (acf0.error + acf1.error) / 2
                 
                 ccf = self.ccf_window_single(defl1_single, defl0_single)
-                tau, tau_err, corr, corr_err, _ = self.fitting_method(ccf)
+                tau, corr, _ = self.fitting_method(ccf)
+
+                # tau_0 is found and its error propagated by hand below (an
+                # fsolve root-find through a CubicSpline, not `uncertainties`
+                # arithmetic), so the fsolve target needs plain floats.
+                corr_nominal = corr.nominal_value
+                corr_err = corr.std_dev
 
                 acf_interp = CubicSpline(acf0.coordinate('Time lag')[0], acfmean)
                 acf_err_interp = CubicSpline(acf0.coordinate('Time lag')[0], acf_err_mean)
@@ -634,7 +638,7 @@ class CorrelationAnalysis:
                 # On failure fsolve silently returns x0, which is indistinguishable
                 # from a genuine 20 us root, so the solver status has to be checked.
                 root, _, ier, mesg = fsolve(
-                    lambda x: acf_interp(x) - corr,
+                    lambda x: acf_interp(x) - corr_nominal,
                     x0 = 20e-6,
                     full_output = True
                 )
@@ -642,27 +646,25 @@ class CorrelationAnalysis:
                 if ier != 1:
                     raise RuntimeError(
                         f'tau0 root finding did not converge at t = {t} s, ch = {ch} '
-                        f'(CCF max = {corr}, returned {root[0]*1e6} us): {mesg.strip()}'
+                        f'(CCF max = {corr_nominal}, returned {root[0]*1e6} us): {mesg.strip()}'
                     )
-                    
-                tau0 = abs(root[0])
+
+                tau0_nominal = abs(root[0])
 
                 # First order propagation of ACF(tau0) = corr: both the ACF
                 # curve and the crossing level are uncertain, and both enter
                 # through the reciprocal ACF slope at the root. Added in
                 # quadrature, i.e. neglecting their covariance.
                 acf_der = acf_interp.derivative()
-                tau0_err = np.sqrt(acf_err_interp(tau0)**2 + corr_err**2) / abs(acf_der(tau0))
+                tau0_err = np.sqrt(acf_err_interp(tau0_nominal)**2 + corr_err**2) / abs(acf_der(tau0_nominal))
 
                 tau_vals[i, j] = tau
-                tau_err_vals[i, j] = tau_err
                 corr_vals[i, j] = corr
-                tau0_vals[i, j] = tau0 * 1e6
-                tau0_err_vals[i, j] = tau0_err * 1e6
-                
-        return tau_vals, tau_err_vals, tau0_vals, tau0_err_vals, corr_vals
-    
-    def get_velocity_taylor(self, tau, tau_err):
+                tau0_vals[i, j] = ufloat(tau0_nominal * 1e6, tau0_err * 1e6)
+
+        return tau_vals, tau0_vals, corr_vals
+
+    def get_velocity_taylor(self, tau):
         """
         Poloidal velocity in the Taylor (frozen turbulence) model.
 
@@ -672,53 +674,38 @@ class CorrelationAnalysis:
         Parameters
         ----------
         tau : numpy.ndarray
-            CCF maximum time lags in microseconds, as returned by
-            ``get_max_time_lag_taylor``.
-        tau_err : numpy.ndarray
-            1-sigma uncertainties on `tau` in microseconds.
+            Object array of ``ufloat`` CCF maximum time lags in microseconds,
+            as returned by ``get_max_time_lag_taylor``.
 
         Returns
         -------
         vpol : numpy.ndarray
-            Poloidal velocity in km/s (mm/us), same shape as `tau`. Points with
-            |tau| < 1e-3 us are set to nan.
-        vpol_err : numpy.ndarray
-            1-sigma uncertainty on `vpol` in km/s, propagated from the beam
-            separation and time lag uncertainties.
+            Object array of ``ufloat`` poloidal velocity in km/s (mm/us), same
+            shape as `tau`. Points with |tau| < 1e-3 us are set to
+            ``ufloat(nan, nan)``.
 
         Notes
         -----
         Reads the deflection voltage from the APDCAM config on first use via
-        ``get_deflection_params``.
+        ``get_deflection_params``. `vpol`'s uncertainty is propagated
+        automatically from the beam separation and time lag uncertainties by
+        `uncertainties` arithmetic (`s / tau`), not computed by hand.
         """
 
         if not hasattr(self, 'poloidal_deflection'):
             self.get_deflection_params()
 
-        # Infinity blowups can occur here if the CCF max time lag is close to zero.
-        # Have to be careful by using np.divide instead of native division
+        # Infinity blowups can occur here if the CCF max time lag is close to
+        # zero, so this is a physical domain guard, not error propagation.
+        tau_nominal = unp.nominal_values(tau)
+        valid = np.abs(tau_nominal) >= 1e-3
 
-        vpol = np.divide(self.poloidal_deflection, tau, out = np.full_like(tau, np.nan), where = np.abs(tau) >= 1e-3)
+        vpol = np.full(tau.shape, ufloat(np.nan, np.nan), dtype=object)
+        vpol[valid] = self.poloidal_deflection / tau[valid]
 
-        # Sum of squares error propagation: dv = sqrt[ (ds/t)^2 + (s/t^2 dt)^2 ]
-        vpol_err_1 = np.divide(
-            self.poloidal_deflection_err,
-            tau,
-            out = np.full_like(tau, np.nan),
-            where = np.abs(tau) >= 1e-3)
+        return vpol
 
-        vpol_err_2 = np.divide(
-            self.poloidal_deflection * tau_err,
-            tau**2,
-            out = np.full_like(tau, np.nan),
-            where = np.abs(tau) >= 1e-3
-        )
-        
-        vpol_err = np.sqrt(vpol_err_1**2 + vpol_err_2**2)
-        
-        return vpol, vpol_err
-    
-    def get_velocity_elliptical(self, tau, tau_err, tau0, tau0_err):
+    def get_velocity_elliptical(self, tau, tau0):
         """
         Convective and fading velocity in the elliptical approach.
 
@@ -736,25 +723,18 @@ class CorrelationAnalysis:
         Parameters
         ----------
         tau : numpy.ndarray
-            CCF maximum time lags in microseconds.
-        tau_err : numpy.ndarray
-            1-sigma uncertainties on `tau` in microseconds.
+            Object array of ``ufloat`` CCF maximum time lags in microseconds.
         tau0 : numpy.ndarray
-            Fading timescales in microseconds, as returned by
-            ``get_max_time_lag_elliptical``.
-        tau0_err : numpy.ndarray
-            1-sigma uncertainties on `tau0` in microseconds.
+            Object array of ``ufloat`` fading timescales in microseconds, as
+            returned by ``get_max_time_lag_elliptical``.
 
         Returns
         -------
         vpol : numpy.ndarray
-            Convective poloidal velocity in km/s (mm/us), same shape as `tau`.
-        vpol_err : numpy.ndarray
-            1-sigma uncertainty on `vpol` in km/s, see Notes.
+            Object array of ``ufloat`` convective poloidal velocity in km/s
+            (mm/us), same shape as `tau`.
         vfade : numpy.ndarray
-            Fading velocity in km/s, same shape.
-        vfade_err : numpy.ndarray
-            1-sigma uncertainty on `vfade` in km/s, see Notes.
+            Object array of ``ufloat`` fading velocity in km/s, same shape.
 
         Notes
         -----
@@ -765,21 +745,25 @@ class CorrelationAnalysis:
         divisions need no zero guard, unlike the one in ``get_velocity_taylor``.
         A `nan` `tau` still propagates into both velocities.
 
-        Both errors are sum of squares propagations of the beam separation `s`,
-        `dt` and `tau_0` terms, which assumes the three are independent. They
-        are not entirely: `tau_0` is defined through the CCF maximum value,
-        which comes from the same peak fit as `dt`, so the exact expressions
-        carry a ``Cov(dt, tau_0)`` cross term. They also inherit whatever bias
-        `tau0_err` carries from its own neglected covariance, documented in
-        ``get_max_time_lag_elliptical``. See `error_propagation.md`.
+        `vpol` and `vfade`'s uncertainties are propagated automatically by
+        `uncertainties` arithmetic from `s`, `tau` and `tau0`'s own
+        uncertainties, treating the three as independent (each is a distinct
+        `ufloat`/`Variable`). This assumption is not entirely accurate:
+        `tau0` is defined through the CCF maximum value, which comes from the
+        same peak fit as `tau`, so the exact expressions carry a
+        ``Cov(dt, tau_0)`` cross term that `uncertainties` cannot see (it isn't
+        told the two share a common origin). `vpol`/`vfade` also inherit
+        whatever bias `tau0`'s own uncertainty carries from its neglected
+        covariance, documented in ``get_max_time_lag_elliptical``. See
+        `error_propagation.md`.
         """
 
         if not hasattr(self, 'poloidal_deflection'):
             self.get_deflection_params()
 
         # tau0 is strictly positive, so the fading time cannot vanish and none
-        # of the divisions below need the np.divide guard get_velocity_taylor has.
-        fading_time = np.sqrt(tau**2 + tau0**2)
+        # of the divisions below need the domain guard get_velocity_taylor has.
+        fading_time = unp.sqrt(tau**2 + tau0**2)
 
         # Eq. (2): v_pol = s * dt / (dt^2 + tau_0^2)
         vpol = self.poloidal_deflection * tau / fading_time**2
@@ -787,25 +771,7 @@ class CorrelationAnalysis:
         # Eq. (3): v_fade = s / sqrt(dt^2 + tau_0^2)
         vfade = self.poloidal_deflection / fading_time
 
-        # Sum of squares error propagation for vpol and vfade, treating s, dt
-        # and tau_0 as independent. Signs are irrelevant, the terms are squared.
-        dvpol_ds = tau / (tau**2 + tau0**2)
-        dvpol_dtau = self.poloidal_deflection * (tau0**2 - tau**2) / (tau**2 + tau0**2)**2
-        dvpol_dtau0 = 2*self.poloidal_deflection*tau*tau0 / (tau**2 + tau0**2)**2
-        
-        vpol_err = np.sqrt(
-            (dvpol_ds*self.poloidal_deflection_err)**2 + (dvpol_dtau*tau_err)**2 + (dvpol_dtau0*tau0_err)**2
-        )
-        
-        dvfade_ds = 1 / np.sqrt(tau**2 + tau0**2)
-        dvfade_dtau = self.poloidal_deflection * tau / (tau**2 + tau0**2)**(3/2)
-        dvfade_dtau0 = self.poloidal_deflection * tau0 / (tau**2 + tau0**2)**(3/2)
-        
-        vfade_err = np.sqrt(
-            (dvfade_ds*self.poloidal_deflection_err)**2 + (dvfade_dtau*tau_err)**2 + (dvfade_dtau0*tau0_err)**2
-        )
-
-        return vpol, vpol_err, vfade, vfade_err
+        return vpol, vfade
 
 
     # --- THE FOLLOWING FUNCTIONS ARE UNUSED AND/OR DEPRECATED ---

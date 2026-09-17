@@ -3,6 +3,7 @@ name = "poloidal_flow"
 version = "0.1.0"
 description = "Signal processing and analysis algorithms for the calculation of poloidal flows via the W7X ABES diagnostic"
 readme = "README.md"
+dependencies = ["uncertainties"]
 
 [build-system]
 requires = ["hatchling >= 1.26"]
