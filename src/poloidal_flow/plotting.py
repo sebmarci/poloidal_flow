@@ -167,7 +167,7 @@ class CCFPlotter:
                 title_str = f'Channel {channel}, t = {time:.2f} s\n$\\tau$ = {tau_max:.2f} $\\mu$s'
 
             elif method == 'parabola':
-                tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
+                tau_max, tau_err, ccf_max, ccf_max_err, popt = self.analyzer.fit_parabola(ccf)
                 if popt is not None:
                     ind_max = np.argmax(np.abs(ccf.data))
                     time_lag_slice = time_lags[ind_max-2:ind_max+3]
@@ -320,7 +320,7 @@ class CCFPlotter:
                 tau_max, ccf_max, popt = self.analyzer.fit_gaussian(ccf)
                 ax.plot(ts, gaussian_func(ts, *popt), color='C1', linewidth=1.5)
             elif method == 'parabola':
-                tau_max, tau_err, ccf_max, popt = self.analyzer.fit_parabola(ccf)
+                tau_max, tau_err, ccf_max, ccf_max_err, popt = self.analyzer.fit_parabola(ccf)
                 if popt is not None:
                     ind_max = np.argmax(np.abs(ccf.data))
                     time_lag_slice = time_lags[ind_max-2:ind_max+3]
