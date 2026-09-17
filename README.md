@@ -95,15 +95,15 @@ times = np.linspace(0, 10, 101)
 channels = np.arange(1, 41)
 
 # Elliptical approach: convective and fading velocity together
-tau, tau_err, tau0, corr = analyzer.get_max_time_lag_elliptical(times, channels)
-vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(tau, tau_err, tau0)
+tau, tau_err, tau0, tau0_err, corr = analyzer.get_max_time_lag_elliptical(times, channels)
+vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(tau, tau_err, tau0, tau0_err)
 
 # Taylor model, for comparison
 # tau, tau_err, corr = analyzer.get_max_time_lag_taylor(times, channels)
 # vpol, vpol_err = analyzer.get_velocity_taylor(tau, tau_err)
 
 # All arrays have shape (len(times), len(channels)):
-#   tau, tau_err, tau0 in microseconds; velocities in km/s (mm/us)
+#   tau, tau_err, tau0, tau0_err in microseconds; velocities in km/s (mm/us)
 
 # 4. Inspect a single CCF
 CCFPlotter(analyzer).plot_single(time=7.0, channel=20, method='parabola')
