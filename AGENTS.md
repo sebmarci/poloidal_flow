@@ -142,69 +142,78 @@ analyzer = CorrelationAnalysis(data_defl0, data_defl1, corr_config)
 times = np.linspace(0, 10, 101)  # seconds
 channels = np.arange(1, 41)
 
-tau, tau_err, corr                 = analyzer.get_max_time_lag_taylor(times, channels)
-tau, tau_err, tau0, tau0_err, corr = analyzer.get_max_time_lag_elliptical(times, channels)
+tau, corr        = analyzer.get_max_time_lag_taylor(times, channels)
+tau, tau0, corr  = analyzer.get_max_time_lag_elliptical(times, channels)
 
-# All arrays have shape (len(times), len(channels)):
-#   tau      - CCF maximum time lag, microseconds
-#   tau_err  - 1-sigma uncertainty on tau, microseconds
-#   tau0     - elliptical fading timescale, microseconds (always positive)
-#   tau0_err - 1-sigma uncertainty on tau0, microseconds
-#   corr     - CCF value at the peak
+# All three are object arrays of `uncertainties.ufloat`, shape
+# (len(times), len(channels)):
+#   tau  - CCF maximum time lag, microseconds
+#   tau0 - elliptical fading timescale, microseconds (nominal value always positive)
+#   corr - CCF value at the peak
 
-# Velocities in km/s (separation in mm / lag in us). Both lazily call
-# get_deflection_params() if the deflection has not been read yet.
-vpol, vpol_err = analyzer.get_velocity_taylor(tau, tau_err)   # eq. (1)
+# Velocities in km/s (separation in mm / lag in us), also `ufloat` object
+# arrays. Both lazily call get_deflection_params() if the deflection has not
+# been read yet.
+vpol = analyzer.get_velocity_taylor(tau)   # eq. (1)
 
 # The elliptical approach returns the convective velocity (eq. 2) and the
 # fading velocity (eq. 3) together - they are two readings of the same fit.
-vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(
-    tau, tau_err, tau0, tau0_err)
+vpol, vfade = analyzer.get_velocity_elliptical(tau, tau0)
 
 # Deflection voltage and beam separation from the APDCAM XML config
 analyzer.get_deflection_params()
 analyzer.deflection_voltage       # (top - bottom) chopper voltage, V
-analyzer.poloidal_deflection      # CALIBRATION_FACTOR * voltage, mm
-analyzer.poloidal_deflection_err
+analyzer.poloidal_deflection      # CALIBRATION_FACTOR * voltage, mm, a ufloat
 ```
 
-`CALIBRATION_FACTOR` / `CALIBRATION_FACTOR_ERR` (mm/V) are module-level constants in
-`analysis.py`.
+`CALIBRATION_FACTOR` (mm/V) is a module-level `ufloat` constant in `analysis.py`.
+
+Uncertainties are propagated with the `uncertainties` package: `tau`, `corr`,
+`poloidal_deflection`/`calibration_factor`, `vpol` and `vfade` are `ufloat`s (or object
+arrays of them), and ordinary `+ - * / **` on them propagates the error automatically. The
+one exception is `tau_0`, computed manually — see below — because its derivation goes
+through an `fsolve` root-find that `uncertainties` cannot differentiate through; only the
+final `(value, error)` pair is wrapped into a `ufloat` afterwards so it can be combined
+with `tau` automatically in `get_velocity_elliptical`. When writing results to HDF5, split
+back into separate nominal/error datasets with `unumpy.nominal_values(x)` /
+`unumpy.std_devs(x)` right before `create_dataset` — see `scripts/process_ccf.py`.
 
 Supporting methods: `ccf_window_single(data0, data1)`, `acf_window_single(data)`,
 `truncate_data(data0, data1)` (trims both states to a common sample count), and
 `fit_parabola(ccf)`.
 
 **Peak fitting.** `fit_parabola` fits `a * (x - x0)^2 + b` to the 5 samples around
-`argmax(|CCF|)`, weighted by the CCF errors, and returns
-`(x0, x0_err, peak_value, peak_value_err, popt)`. The parabola is parameterized by its
-extremum, so `peak_value` is identically `b` and `peak_value_err` is its standard error —
-needed by the elliptical `tau_0` error. A peak within 2 samples of the edge of the lag
-interval means the true maximum lies outside it, so the fit is skipped and `nan`s are
-returned. `fit_gaussian` and `fit_cubic_spline` are deprecated: they return 3-tuples, so
-selecting them in `CorrelationConfig` breaks `get_max_time_lag_*`. They survive only
-because `CCFPlotter` can still draw them.
+`argmax(|CCF|)`, weighted by the CCF errors, and returns `(tau, peak_value, popt)` where
+`tau` and `peak_value` are `ufloat`s built from the fit covariance diagonal. The parabola is
+parameterized by its extremum, so `peak_value` is identically `b` — needed by the
+elliptical `tau_0` error. A peak within 2 samples of the edge of the lag interval means the
+true maximum lies outside it, so the fit is skipped and `ufloat(nan, nan)`s are returned.
+`fit_gaussian` and `fit_cubic_spline` are deprecated: they return plain floats with no
+uncertainty, so selecting them in `CorrelationConfig` silently breaks the error propagation
+`get_max_time_lag_*` relies on. They survive only because `CCFPlotter` can still draw them.
 
 **How `get_max_time_lag_elliptical` finds `tau_0`:**
 1. Slice both deflection states to the time window, `truncate_data` to a common length.
 2. Per channel: compute the ACF of each state, average them (`acfmean`).
 3. Compute the CCF and fit the peak → `dt` (`tau`) and the peak value `corr`.
-4. Cubic-spline the mean ACF and solve `ACF(tau_0) = corr` with `fsolve`.
+4. Cubic-spline the mean ACF and solve `ACF(tau_0) = corr` with `fsolve`, using
+   `corr.nominal_value` since `fsolve` needs plain floats.
 5. `tau_0 = abs(root)`, since the ACF is symmetric and only `tau_0^2` is physical.
 6. `tau0_err = sqrt(acf_err(tau_0)^2 + corr_err^2) / |ACF'(tau_0)|`, the first order
-   propagation of step 4. Implicit differentiation of `ACF(tau_0) - corr = 0` gives both
-   the ACF curve and the crossing level the same `1/ACF'(tau_0)` sensitivity, with
-   *opposite* signs. The two are added in quadrature, which drops the
-   `-2*Cov(ACF, corr)` cross term — the errors are in fact positively correlated (same
-   subintervals, same window), so this is an upper bound. Diverges as `tau_0 -> 0`, where
-   the ACF is flat. Full derivation in `error_propagation.md`.
+   propagation of step 4, computed by hand (not by `uncertainties`). Implicit
+   differentiation of `ACF(tau_0) - corr = 0` gives both the ACF curve and the crossing
+   level the same `1/ACF'(tau_0)` sensitivity, with *opposite* signs. The two are added in
+   quadrature, which drops the `-2*Cov(ACF, corr)` cross term — the errors are in fact
+   positively correlated (same subintervals, same window), so this is an upper bound.
+   Diverges as `tau_0 -> 0`, where the ACF is flat. Full derivation in
+   `error_propagation.md`. The result is then wrapped as `ufloat(tau0, tau0_err)`.
 
 ⚠️ `fsolve` returns its initial guess (`x0 = 20e-6`) on failure, which is indistinguishable
 from a genuine 20 µs root. The solver status `ier` is therefore checked and a `RuntimeError`
 is raised on non-convergence. This aborts the whole run rather than skipping one channel —
 in particular a `nan` `corr` from a failed/edge parabola fit will raise. Keep the check; if
-per-channel tolerance is wanted, short-circuit on `np.isnan(corr)` *before* the solve
-instead of weakening the guardrail.
+per-channel tolerance is wanted, short-circuit on `np.isnan(corr.nominal_value)` *before*
+the solve instead of weakening the guardrail.
 
 Everything below the `--- THE FOLLOWING FUNCTIONS ARE UNUSED AND/OR DEPRECATED ---` marker
 in `analysis.py` (radial correlation, 2D CCF) is kept for reference only. Do not extend it.
@@ -236,7 +245,7 @@ just wrong numbers — so they are worth remembering.
 - **`xcorr_interval` must be > 1.** FLAP derives the CCF error from the scatter across
   subintervals. With `Interval_n = 1` the error array is all zeros, and
   `curve_fit(..., sigma=zeros)` does *not* raise — it emits an `OptimizeWarning` and
-  returns `p0` unchanged, so every window reports `tau = 1.0 µs`, `tau_err = nan`.
+  returns `p0` unchanged, so every window reports `tau = ufloat(1.0, nan)` µs.
   The `CorrelationConfig` default of `1` is a trap; production scripts use 100-150.
 - **`xcorr_normalize` must be True for the elliptical model.** `ACF(tau_0) = CCF_max` is
   only meaningful if both are normalized to 1 at zero lag. With `Normalize=False` FLAP
@@ -257,8 +266,13 @@ just wrong numbers — so they are worth remembering.
 - **`fsolve` failure is silent.** It returns `x0`. Always use `full_output=True` and check
   `ier`. Note that `ier == 1` still does not guarantee a *useful* root — it can converge to
   a far spurious root because `CubicSpline` extrapolates outside the lag window by default.
-- **Guard divisions by `tau`.** `get_velocity_taylor` uses `np.divide(..., where=|tau| >=
-  1e-3)` because a near-zero lag otherwise blows the velocity up to infinity.
+- **Guard divisions by `tau`.** `get_velocity_taylor` masks out `|tau| < 1e-3` (via
+  `unumpy.nominal_values(tau)`, since a `ufloat` comparison isn't meaningful) before
+  dividing, because a near-zero lag otherwise blows the velocity up to infinity.
+- **`uncertainties` needs plain floats at FFI boundaries.** `scipy.optimize.fsolve` and
+  numpy's own `argmax`/comparisons don't understand `ufloat`s. Extract
+  `.nominal_value`/`.std_dev` (or `unumpy.nominal_values`/`unumpy.std_devs` for arrays)
+  before handing a value to `fsolve`, `h5py.create_dataset`, or matplotlib.
 
 ## Performance
 
@@ -269,13 +283,16 @@ Slice **time first, then channel**. Pre-slicing channels outside the time loop i
 
 ## Known issues / work in progress
 
-- `vpol_err` and `vfade_err` propagate the `s`, `dt` and `tau_0` terms in quadrature,
-  which assumes the three are independent. They are not entirely: `tau_0` is defined
-  through the CCF maximum value, which comes from the same peak fit as `dt`, so a
-  `Cov(dt, tau_0) = pcov[x0, b] / ACF'(tau_0)` cross term is missing. Deliberately left
-  out, consistent with `tau0_err` also dropping its covariance; see `error_propagation.md`
-  §8, which also notes that `dvpol_dtau0`, `dvfade_dtau` and `dvfade_dtau0` are coded
-  without their leading minus signs (harmless while squared, wrong for a cross term).
+- `vpol`/`vfade`'s uncertainties are propagated automatically by `uncertainties` from `s`,
+  `dt` and `tau_0`, which treats the three as independent `Variable`s. They are not
+  entirely: `tau_0` is defined through the CCF maximum value, which comes from the same
+  peak fit as `dt`, so a `Cov(dt, tau_0) = pcov[x0, b] / ACF'(tau_0)` cross term is missing
+  — `uncertainties` has no way to know `tau` and `tau0` share an origin, since `tau0` is
+  constructed as a fresh `ufloat` from the manual `fsolve` result rather than derived by
+  arithmetic from `tau`. Consistent with `tau0`'s own uncertainty also dropping its
+  covariance; see `error_propagation.md` §8. Capturing this would need
+  `uncertainties.correlated_values(popt, pcov)` in `fit_parabola` to keep `tau` and `corr`
+  correlated, and then plumbing that correlation through to `tau0` — not currently done.
 - The `fsolve` root find for `tau_0` is unbracketed and starts from a hardcoded
   `x0 = 20e-6`. It is guarded (raises on non-convergence) but not robust; a bracketed
   `brentq` on the first sign change of `acfmean - corr` at positive lag would remove both

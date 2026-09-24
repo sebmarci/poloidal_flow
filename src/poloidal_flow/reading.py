@@ -216,16 +216,28 @@ class ABESDataReader:
         filter runs along the 'Time' coordinate. The band selects the turbulent
         fluctuations the correlation analysis works on, so it has to sit above
         the chopping frequency and below the noise floor.
+
+        `filter_type` selects FLAP's 'Type' option. 'Highpass' and 'Lowpass'
+        take a single corner frequency, taken from `bandpass_range[0]` and
+        `bandpass_range[1]` respectively; 'Bandpass' uses both.
         """
-        
+
+        options = {
+            'Type': self.config.filter_type,
+            'Design': self.config.bandpass_type,
+        }
+
+        if self.config.filter_type == 'Highpass':
+            options['f_low'] = self.config.bandpass_range[0]
+        elif self.config.filter_type == 'Lowpass':
+            options['f_high'] = self.config.bandpass_range[1]
+        else:
+            options['f_low'] = self.config.bandpass_range[0]
+            options['f_high'] = self.config.bandpass_range[1]
+
         d_bandpass = dataobject.filter_data(
                 coordinate = 'Time',
-                options = {
-                    'Type': 'Bandpass',
-                    'Design': self.config.bandpass_type,
-                    'f_low': self.config.bandpass_range[0],
-                    'f_high': self.config.bandpass_range[1]
-                }
+                options = options
             )
         
         return d_bandpass
