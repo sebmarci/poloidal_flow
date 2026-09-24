@@ -30,11 +30,16 @@ class ABESConfig:
         Time range for data acquisition in seconds as (start, end).
         If None, the entire shot duration is used. Default is None.
     bandpass_type : Optional[str], optional
-        Type of bandpass filter to apply. Options include 'Elliptic', 'Butterworth',
-        or None to skip filtering. Default is None.
+        Design of the filter to apply, i.e. FLAP's `filter_data` 'Design' option.
+        Options include 'Elliptic', 'Butterworth', 'Chebyshev I', 'Chebyshev II',
+        'Bessel', or None to skip filtering. Default is None.
     bandpass_range : Optional[Tuple[float, float]], optional
-        Bandpass filter frequency range in Hz as (f_low, f_high). Ignored when
-        `bandpass_type` is None. Default is (2000, 10000) Hz.
+        Filter corner frequencies in Hz as (f_low, f_high). For `filter_type`
+        'Highpass' only `f_low` is used, for 'Lowpass' only `f_high` is used.
+        Ignored when `bandpass_type` is None. Default is (2000, 10000) Hz.
+    filter_type : str, optional
+        FLAP's `filter_data` 'Type' option: 'Bandpass' (default), 'Highpass' or
+        'Lowpass'. Ignored when `bandpass_type` is None.
 
     Examples
     --------
@@ -52,6 +57,7 @@ class ABESConfig:
     time_range: Optional[Tuple[float, float]] = None
     bandpass_type: Optional[str] = None
     bandpass_range: Optional[Tuple[float, float]] = (2e3, 10e3)  # Hz
+    filter_type: str = 'Bandpass'
 
 @dataclass
 class CorrelationConfig:
