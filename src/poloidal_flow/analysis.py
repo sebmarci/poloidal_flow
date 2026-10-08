@@ -408,8 +408,9 @@ class CorrelationAnalysis:
         Two cases return all-nan (with `popt` None) instead of raising: a peak
         within 2 samples of the edge of the retained lag interval, which means
         the true maximum is most likely outside it, and a non-converging fit.
-        `nan` results propagate into the velocities, but they make
-        ``get_max_time_lag_elliptical`` raise at the ``tau_0`` root find.
+        `nan` results propagate into the velocities; ``get_max_time_lag_elliptical``
+        also detects a `nan` `corr` and skips the ``tau_0`` root find rather than
+        handing ``fsolve`` an unsolvable target.
 
         The CCF errors are all zero when ``xcorr_interval == 1``, in which case
         ``curve_fit`` silently returns the initial guess instead of a fit.
@@ -545,15 +546,11 @@ class CorrelationAnalysis:
             propagated by `uncertainties` arithmetic — see Notes — they are
             only wrapped into a `ufloat` afterwards so `tau0` can be combined
             with `tau` automatically downstream (`get_velocity_elliptical`).
+            A `nan` `corr` (failed/edge parabola fit) or a non-converging
+            root find yields ``ufloat(nan, nan)`` for that point rather than
+            aborting the run.
         corr_vals : numpy.ndarray
             Object array of ``ufloat`` CCF values at the peaks, same shape.
-
-        Raises
-        ------
-        RuntimeError
-            If the ``tau_0`` root find fails to converge for any point. This
-            aborts the whole run rather than skipping one channel; a `nan`
-            `corr` from a failed or edge parabola fit triggers it too.
 
         Notes
         -----
@@ -585,7 +582,10 @@ class CorrelationAnalysis:
 
         ``fsolve`` returns its initial guess (20 us) on failure, which is
         indistinguishable from a genuine 20 us root, so the solver status is
-        checked and turned into the `RuntimeError` above. Even a converged
+        checked; a non-convergent solve is reported to stdout and replaced with
+        ``ufloat(nan, nan)`` rather than raising, so one bad point does not abort
+        the whole grid. A `nan` `corr` is detected before the solve for the same
+        reason (`fsolve` can never converge on a `nan` target). Even a converged
         solve is not guaranteed to be meaningful: the spline extrapolates
         outside the lag window, so a far spurious root is possible.
 
@@ -632,31 +632,42 @@ class CorrelationAnalysis:
                 corr_nominal = corr.nominal_value
                 corr_err = corr.std_dev
 
-                acf_interp = CubicSpline(acf0.coordinate('Time lag')[0], acfmean)
-                acf_err_interp = CubicSpline(acf0.coordinate('Time lag')[0], acf_err_mean)
+                # A nan corr (failed/edge parabola fit) can never be solved
+                # for, so skip the root find entirely rather than handing
+                # fsolve a target it cannot converge on.
+                if np.isnan(corr_nominal):
+                    print(f'CCF max is NaN at t = {t} s, ch = {ch}, skipping tau0 root find')
+                    tau0_nominal = np.nan
+                    tau0_err = np.nan
+                else:
+                    acf_interp = CubicSpline(acf0.coordinate('Time lag')[0], acfmean)
+                    acf_err_interp = CubicSpline(acf0.coordinate('Time lag')[0], acf_err_mean)
 
-                # On failure fsolve silently returns x0, which is indistinguishable
-                # from a genuine 20 us root, so the solver status has to be checked.
-                root, _, ier, mesg = fsolve(
-                    lambda x: acf_interp(x) - corr_nominal,
-                    x0 = 20e-6,
-                    full_output = True
-                )
-
-                if ier != 1:
-                    raise RuntimeError(
-                        f'tau0 root finding did not converge at t = {t} s, ch = {ch} '
-                        f'(CCF max = {corr_nominal}, returned {root[0]*1e6} us): {mesg.strip()}'
+                    # On failure fsolve silently returns x0, which is indistinguishable
+                    # from a genuine 20 us root, so the solver status has to be checked.
+                    root, _, ier, mesg = fsolve(
+                        lambda x: acf_interp(x) - corr_nominal,
+                        x0 = 20e-6,
+                        full_output = True
                     )
 
-                tau0_nominal = abs(root[0])
+                    if ier != 1:
+                        print(
+                            f'tau0 root finding did not converge at t = {t} s, ch = {ch} '
+                            f'(CCF max = {corr_nominal}, returned {root[0]*1e6} us): '
+                            f'{mesg.strip()}, replacing with NaN'
+                        )
+                        tau0_nominal = np.nan
+                        tau0_err = np.nan
+                    else:
+                        tau0_nominal = abs(root[0])
 
-                # First order propagation of ACF(tau0) = corr: both the ACF
-                # curve and the crossing level are uncertain, and both enter
-                # through the reciprocal ACF slope at the root. Added in
-                # quadrature, i.e. neglecting their covariance.
-                acf_der = acf_interp.derivative()
-                tau0_err = np.sqrt(acf_err_interp(tau0_nominal)**2 + corr_err**2) / abs(acf_der(tau0_nominal))
+                        # First order propagation of ACF(tau0) = corr: both the ACF
+                        # curve and the crossing level are uncertain, and both enter
+                        # through the reciprocal ACF slope at the root. Added in
+                        # quadrature, i.e. neglecting their covariance.
+                        acf_der = acf_interp.derivative()
+                        tau0_err = np.sqrt(acf_err_interp(tau0_nominal)**2 + corr_err**2) / abs(acf_der(tau0_nominal))
 
                 tau_vals[i, j] = tau
                 corr_vals[i, j] = corr

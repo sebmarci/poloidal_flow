@@ -95,15 +95,16 @@ times = np.linspace(0, 10, 101)
 channels = np.arange(1, 41)
 
 # Elliptical approach: convective and fading velocity together
-tau, tau_err, tau0, tau0_err, corr = analyzer.get_max_time_lag_elliptical(times, channels)
-vpol, vpol_err, vfade, vfade_err = analyzer.get_velocity_elliptical(tau, tau_err, tau0, tau0_err)
+tau, tau0, corr = analyzer.get_max_time_lag_elliptical(times, channels)
+vpol, vfade = analyzer.get_velocity_elliptical(tau, tau0)
 
 # Taylor model, for comparison
-# tau, tau_err, corr = analyzer.get_max_time_lag_taylor(times, channels)
-# vpol, vpol_err = analyzer.get_velocity_taylor(tau, tau_err)
+# tau, corr = analyzer.get_max_time_lag_taylor(times, channels)
+# vpol = analyzer.get_velocity_taylor(tau)
 
-# All arrays have shape (len(times), len(channels)):
-#   tau, tau_err, tau0, tau0_err in microseconds; velocities in km/s (mm/us)
+# All of tau, tau0, corr, vpol, vfade are object arrays of `uncertainties.ufloat`,
+# shape (len(times), len(channels)): tau/tau0 in microseconds, velocities in km/s.
+# Split nominal value and error with unumpy.nominal_values(x) / unumpy.std_devs(x).
 
 # 4. Inspect a single CCF
 CCFPlotter(analyzer).plot_single(time=7.0, channel=20, method='parabola')
@@ -115,13 +116,12 @@ lazily by the `get_velocity_*` methods:
 ```python
 analyzer.get_deflection_params()
 analyzer.deflection_voltage       # (top - bottom) chopper plate voltage, V
-analyzer.poloidal_deflection      # separation s, mm
-analyzer.poloidal_deflection_err
+analyzer.poloidal_deflection      # separation s, mm, a ufloat
 ```
 
-`CALIBRATION_FACTOR` / `CALIBRATION_FACTOR_ERR` (mm/V), measured with `CVPipeline` from
-CMOS images of the deflected beam, are module-level constants in `analysis.py` and are
-mirrored onto each analyzer instance.
+`CALIBRATION_FACTOR` (mm/V), measured with `CVPipeline` from CMOS images of the deflected
+beam, is a module-level `ufloat` constant in `analysis.py`, mirrored onto each analyzer
+instance as `calibration_factor`.
 
 ## Repository layout
 
@@ -169,13 +169,14 @@ These fail silently — no exception, just wrong numbers.
 
 - **`xcorr_interval` must be > 1.** FLAP derives the CCF error from the scatter across
   subintervals, so with one subinterval the errors are all zero and the weighted parabola
-  fit returns its initial guess unchanged (`tau = 1.0 µs`, `tau_err = nan`) for every
-  window. The `CorrelationConfig` default of `1` is a trap; pass 100–150 explicitly.
+  fit returns its initial guess unchanged (`tau = ufloat(1.0, nan)` µs) for every window.
+  The `CorrelationConfig` default of `1` is a trap; pass 100–150 explicitly.
 - **`xcorr_normalize` must stay True for the elliptical model.** `ACF(tau_0) = CCF_max` is
   only meaningful if both are normalized to 1 at zero lag.
 - **Only `'parabola'` yields time lags.** `fit_gaussian` and `fit_cubic_spline` are
-  deprecated and return 3-tuples, which breaks `get_max_time_lag_*`. They survive only so
-  that `CCFPlotter` can still draw them.
+  deprecated and return plain floats with no uncertainty, which breaks the error
+  propagation `get_max_time_lag_*` relies on. They survive only so that `CCFPlotter` can
+  still draw them.
 - **CCF argument order sets the velocity sign.** Both `get_max_time_lag_*` methods call
   `ccf_window_single(defl1_single, defl0_single)`; swapping the arguments flips the sign of
   `dt` and hence of `v_pol`.
@@ -189,17 +190,22 @@ costs roughly 2–3× the Taylor model.
 
 ## Known limitations
 
-- `tau_0` has no uncertainty estimate, so neither elliptical error bar is complete. For
-  `v_pol` the missing term is the dominant one, so `vpol_err` is a zero placeholder;
-  `vfade_err` propagates the `s` and `dt` terms and is a lower bound.
-- The `tau_0` root find is an unbracketed `fsolve` from a hardcoded 20 µs initial guess.
-  Non-convergence is detected and raises a `RuntimeError` (which aborts the whole run,
-  including on a `nan` `corr` from a failed peak fit), but a converged solve can still land
-  on a spurious root in the spline's extrapolation region.
+- `vpol`/`vfade` uncertainties are propagated automatically by `uncertainties` from `s`,
+  `dt` and `tau_0`, treating the three as independent. They aren't entirely: `tau_0` is
+  defined through the CCF maximum value, which comes from the same peak fit as `dt`, so a
+  `Cov(dt, tau_0)` cross term is missing. Fixing this needs
+  `uncertainties.correlated_values(popt, pcov)` in `fit_parabola` to keep `tau` and `corr`
+  correlated, and then plumbing that correlation through to `tau0` — not currently done.
+- The `tau_0` root find is an unbracketed `fsolve` from a hardcoded 20 µs initial guess. A
+  `nan` `corr` (failed/edge peak fit) skips the solve, and non-convergence is reported to
+  stdout; both replace that point's `tau_0` with `ufloat(nan, nan)` rather than aborting
+  the run. A converged solve can still land on a spurious root in the spline's
+  extrapolation region — a bracketed `brentq` on the first sign change of `acfmean - corr`
+  would remove both that risk and the `x0` sensitivity.
 - `CCFPlotter` calls `ccf_window_single(defl0, defl1)`, the reverse of the order used by
   the analysis methods, so plotted lags have the opposite sign to analysed ones. It also
   skips `truncate_data`.
-- `example.py` and several notebooks still call the removed `get_max_time_lag()` /
+- Several notebooks still call the removed `get_max_time_lag()` /
   `get_poloidal_deflection_voltage()` API and no longer run.
 - `scripts/process_cmos_images.py` looks up the spatial calibration under a path from an
   older nested layout (`src/poloidal_flow/beam_axis/poldef_spatcal/`); it now lives in

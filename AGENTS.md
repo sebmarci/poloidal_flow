@@ -209,11 +209,11 @@ uncertainty, so selecting them in `CorrelationConfig` silently breaks the error 
    `error_propagation.md`. The result is then wrapped as `ufloat(tau0, tau0_err)`.
 
 ⚠️ `fsolve` returns its initial guess (`x0 = 20e-6`) on failure, which is indistinguishable
-from a genuine 20 µs root. The solver status `ier` is therefore checked and a `RuntimeError`
-is raised on non-convergence. This aborts the whole run rather than skipping one channel —
-in particular a `nan` `corr` from a failed/edge parabola fit will raise. Keep the check; if
-per-channel tolerance is wanted, short-circuit on `np.isnan(corr.nominal_value)` *before*
-the solve instead of weakening the guardrail.
+from a genuine 20 µs root. The solver status `ier` is therefore checked. A `nan` `corr` (from
+a failed/edge parabola fit) is detected and skips the solve entirely, and a non-convergent
+solve is reported to stdout — both replace that point's `tau_0` with `ufloat(nan, nan)`
+rather than raising, so one bad channel/time point no longer aborts the whole run. `nan`
+propagates cleanly through `get_velocity_elliptical`.
 
 Everything below the `--- THE FOLLOWING FUNCTIONS ARE UNUSED AND/OR DEPRECATED ---` marker
 in `analysis.py` (radial correlation, 2D CCF) is kept for reference only. Do not extend it.
@@ -294,9 +294,10 @@ Slice **time first, then channel**. Pre-slicing channels outside the time loop i
   `uncertainties.correlated_values(popt, pcov)` in `fit_parabola` to keep `tau` and `corr`
   correlated, and then plumbing that correlation through to `tau0` — not currently done.
 - The `fsolve` root find for `tau_0` is unbracketed and starts from a hardcoded
-  `x0 = 20e-6`. It is guarded (raises on non-convergence) but not robust; a bracketed
-  `brentq` on the first sign change of `acfmean - corr` at positive lag would remove both
-  the `x0` sensitivity and the risk of converging on a spline-extrapolation root.
+  `x0 = 20e-6`. It is guarded (non-convergence is reported and replaced with
+  `ufloat(nan, nan)` rather than raising) but not robust; a bracketed `brentq` on the first
+  sign change of `acfmean - corr` at positive lag would remove both the `x0` sensitivity and
+  the risk of converging on a spline-extrapolation root.
 - `CCFPlotter` calls `ccf_window_single(defl0, defl1)`, the reverse of the argument order
   used by `get_max_time_lag_*`, so plotted time lags have the opposite sign to analysed
   ones. It also skips `truncate_data`.
