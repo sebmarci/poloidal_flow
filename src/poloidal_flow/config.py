@@ -68,8 +68,8 @@ class CorrelationConfig:
     ----------
     xcorr_fitting_method : str
         Method for extracting the time delay from the cross-correlation
-        function. Use 'parabola', a parabola fit to the 5 samples around the
-        peak, which is the only method that yields an uncertainty and the only
+        function. Use 'parabola', a parabola fit to the ``xcorr_n_points_fit``
+        samples around the peak, which is the only method that yields an uncertainty and the only
         one accepted by the ``get_max_time_lag_*`` methods. 'gaussian' and
         'cubic_spline' are deprecated and usable for plotting only.
     xcorr_window : float, optional
@@ -97,6 +97,11 @@ class CorrelationConfig:
         whose defining equation ``ACF(tau_0) = CCF_max`` is otherwise
         meaningless.
 
+    xcorr_n_points_fit : int, optional
+        Number of CCF samples, centred on the peak, used by the parabola fit.
+        Must be odd and >= 1 (a ValueError is raised otherwise). The parabola
+        has 3 free parameters, so values below 3 cannot be fitted. Default is 5.
+
     Examples
     --------
     >>> config = CorrelationConfig(
@@ -113,3 +118,9 @@ class CorrelationConfig:
     xcorr_resolution: float = None  # seconds (None is highest resolution by default)
     xcorr_interval: int = 1
     xcorr_normalize: bool = True
+    xcorr_n_points_fit: int = 5
+
+    def __post_init__(self):
+        n = self.xcorr_n_points_fit
+        if not isinstance(n, int) or n < 1 or n % 2 == 0:
+            raise ValueError(f'xcorr_n_points_fit must be an odd integer >= 1, got {n!r}')

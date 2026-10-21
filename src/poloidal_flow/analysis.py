@@ -394,7 +394,7 @@ class CorrelationAnalysis:
 
         Notes
         -----
-        Fits ``a * (x - x0)^2 + b`` to the 5 samples centred on
+        Fits ``a * (x - x0)^2 + b`` to the ``xcorr_n_points_fit`` samples centred on
         ``argmax(|CCF|)``, weighted by the CCF errors. Unlike the deprecated
         methods this yields a propagated uncertainty on the peak position.
 
@@ -406,7 +406,7 @@ class CorrelationAnalysis:
         `error_propagation.md`.
 
         Two cases return all-nan (with `popt` None) instead of raising: a peak
-        within 2 samples of the edge of the retained lag interval, which means
+        within ``xcorr_n_points_fit // 2`` samples of the edge of the retained lag interval, which means
         the true maximum is most likely outside it, and a non-converging fit.
         `nan` results propagate into the velocities; ``get_max_time_lag_elliptical``
         also detects a `nan` `corr` and skips the ``tau_0`` root find rather than
@@ -419,18 +419,20 @@ class CorrelationAnalysis:
         time_lags = ccf.coordinate('Time lag')[0] * 1e6
         ind_max = np.argmax(np.abs(ccf.data))
 
-        # The 3-parameter parabola needs 2 samples on both sides of the peak. A
-        # peak at the edge of the retained time lag interval means the true
-        # maximum is most likely outside it, so no delay can be measured. The
-        # slices below would also be empty (negative start index wraps around).
-        if ind_max < 2 or ind_max > len(ccf.data) - 3:
+        # The fit needs half samples on both sides of the peak. A peak at the
+        # edge of the retained time lag interval means the true maximum is most
+        # likely outside it, so no delay can be measured. The slices below
+        # would also be empty (negative start index wraps around).
+        half = self.config.xcorr_n_points_fit // 2
+        if ind_max < half or ind_max > len(ccf.data) - 1 - half:
             print(f'CCF peak at time lag index {ind_max} of {len(ccf.data)} '
                   '(edge of time lag interval), skipping parabola fit')
             return ufloat(np.nan, np.nan), ufloat(np.nan, np.nan), None
 
-        time_lag_slice = time_lags[ind_max-2:ind_max+3]
-        ccf_slice = ccf.data[ind_max-2:ind_max+3]
-        ccf_err_slice = ccf.error[ind_max-2:ind_max+3]
+        window = slice(ind_max - half, ind_max + half + 1)
+        time_lag_slice = time_lags[window]
+        ccf_slice = ccf.data[window]
+        ccf_err_slice = ccf.error[window]
 
         # popt = [x0, a, b]
         try:

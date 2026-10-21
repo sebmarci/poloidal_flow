@@ -172,7 +172,8 @@ class CCFPlotter:
                 ccf_max = ccf_max.nominal_value
                 if popt is not None:
                     ind_max = np.argmax(np.abs(ccf.data))
-                    time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                    half = self.analyzer.config.xcorr_n_points_fit // 2
+                    time_lag_slice = time_lags[ind_max-half:ind_max+half+1]
                     ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
                     ax.plot(ts_par, parabolic_func(ts_par, *popt),
                            label='Parabola fit',
@@ -327,7 +328,8 @@ class CCFPlotter:
                 ccf_max = ccf_max.nominal_value
                 if popt is not None:
                     ind_max = np.argmax(np.abs(ccf.data))
-                    time_lag_slice = time_lags[ind_max-2:ind_max+3]
+                    half = self.analyzer.config.xcorr_n_points_fit // 2
+                    time_lag_slice = time_lags[ind_max-half:ind_max+half+1]
                     ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
                     ax.plot(ts_par, parabolic_func(ts_par, *popt), color='C1', linewidth=1.5)
             else:
