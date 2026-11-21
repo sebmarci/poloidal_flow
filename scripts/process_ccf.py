@@ -1,6 +1,7 @@
 # Calculate CCF time lags and poloidal velocities for one experiment
 
 import os
+import sys
 
 from poloidal_flow import ABESConfig, ABESDataReader, CorrelationAnalysis, CorrelationConfig
 import flap
@@ -9,29 +10,34 @@ import numpy as np
 import h5py
 from uncertainties import unumpy as unp
 
-exp_id = '20250409.046'
+exp_id = sys.argv[1]
 model = 'elliptical'
 xcorr_fitting_method = 'parabola'
 xcorr_window = 1 # 1 s
 xcorr_interval = 150
-bandpass_range = [500, 500]
 time_range = [0, 10]
 
 output_path = 'processed_data/elliptical'
-output_file = f'{exp_id}_elliptical_highpass_2000.h5'
+output_file = f'{exp_id}_elliptical_3points.h5'
+
+config = ABESConfig(
+    exp_id,
+    spatial_cal = False,
+    bandpass_type = 'Butterworth',
+    bandpass_range = [2000, 0],
+    filter_type = 'Highpass'
+)
 
 xconfig = CorrelationConfig(
     xcorr_fitting_method = xcorr_fitting_method,
     xcorr_window = xcorr_window,
-    xcorr_interval = xcorr_interval
+    xcorr_interval = xcorr_interval,
+    xcorr_n_points_fit = 3
 )
 
-print('Reading')
+print('Reading')  
 
-#defl0, defl1 = ABESDataReader(config).read_data()
-
-defl0 = flap.load('pickled_shot_data/20250409.046_highpass_2000_defl0.pkl')
-defl1 = flap.load('pickled_shot_data/20250409.046_highpass_2000_defl1.pkl')
+defl0, defl1 = ABESDataReader(config).read_data()
 
 print('Calculating correlations')
 
@@ -70,7 +76,9 @@ if model == 'taylor':
         data.attrs['calibration_factor'] = anal.calibration_factor.nominal_value
         data.attrs['calibration_factor_err'] = anal.calibration_factor.std_dev
         data.attrs['poloidal_separation'] = anal.poloidal_deflection.nominal_value
-        data.attrs['bandpass_range'] = bandpass_range
+        data.attrs['bandpass_range'] = config.bandpass_range
+        data.attrs['bandpass_type'] = config.bandpass_type
+        data.attrs['filter_type'] = config.filter_type
         data.attrs['ccf_window'] = xcorr_window
         data.attrs['ccf_interval_n'] = xcorr_interval
         data.attrs['ccf_fitting_method'] = xcorr_fitting_method
@@ -109,7 +117,9 @@ elif model == 'elliptical':
         data.attrs['calibration_factor'] = anal.calibration_factor.nominal_value
         data.attrs['calibration_factor_err'] = anal.calibration_factor.std_dev
         data.attrs['poloidal_separation'] = anal.poloidal_deflection.nominal_value
-        data.attrs['bandpass_range'] = bandpass_range
+        data.attrs['bandpass_range'] = config.bandpass_range
+        data.attrs['bandpass_type'] = config.bandpass_type
+        data.attrs['filter_type'] = config.filter_type
         data.attrs['ccf_window'] = xcorr_window
         data.attrs['ccf_interval_n'] = xcorr_interval
         data.attrs['ccf_fitting_method'] = xcorr_fitting_method

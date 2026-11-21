@@ -9,7 +9,7 @@ import flap_w7x_abes
 import flap
 
 SPATCAL_EXPID = '20250409.046'
-CORR_THRESHOLD = 0.35
+CORR_THRESHOLD = 0
 
 # Read spatial calibration data
 print(f'Reading spatcal data from {SPATCAL_EXPID}')
@@ -23,17 +23,17 @@ mpl.rcParams.update({
     'font.size': 12
 })
 
-for exp_id in os.listdir('processed_data'):
+for exp_id in os.listdir('processed_data/taylor/highpass'):
     
     print(f'Processing {exp_id}')
     
-    if os.path.isdir(f'plots/{exp_id}'):
+    if os.path.isdir(f'plots/allshots/taylor/highpass/{exp_id}'):
         print('Folder already exists')
         continue
     
-    os.mkdir(f'plots/{exp_id}')
+    os.mkdir(f'plots/allshots/taylor/highpass/{exp_id}')
     
-    with h5py.File(f'processed_data/{exp_id}/{exp_id}.h5', 'r') as f:
+    with h5py.File(f'processed_data/taylor/highpass/{exp_id}/{exp_id}_taylor.h5', 'r') as f:
     
         udefl = f['ccf_data'].attrs['poloidal_deflection_voltage']
         deltay = f['ccf_data'].attrs['poloidal_separation']
@@ -75,7 +75,7 @@ for exp_id in os.listdir('processed_data'):
     cbar2 = fig.colorbar(pc2, ax = ax[1])
     cbar2.set_label('$C_{01}(\\tau_{max})$')
 
-    plt.savefig(f'plots/{exp_id}/{exp_id}_ccf_corrs.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_ccf_corrs.pdf')
     plt.close(fig)
     
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize = (24, 8))
@@ -95,7 +95,7 @@ for exp_id in os.listdir('processed_data'):
     cbar2 = fig.colorbar(pc2, ax = ax2)
     cbar2.set_label('$\\Delta v_{pol}$ [km/s]')
 
-    plt.savefig(f'plots/{exp_id}/{exp_id}_vpol.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_vpol.pdf')
     plt.close(fig)
     
     # Plot with main parameters
@@ -146,7 +146,7 @@ for exp_id in os.listdir('processed_data'):
     cbar = fig.colorbar(pcm, cax = caxes[0])
     cbar.set_label('$\\tau_{max}$ [$\\mu$s]')
     
-    plt.savefig(f'plots/{exp_id}/{exp_id}_taumax_params.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_taumax_params.pdf')
     plt.close(fig)
     
     fig, axes = plt.subplots(
@@ -186,7 +186,7 @@ for exp_id in os.listdir('processed_data'):
     cbar = fig.colorbar(pcm, cax = caxes[0])
     cbar.set_label('$\\tau_{max}$ [$\\mu$s]')
         
-    plt.savefig(f'plots/{exp_id}/{exp_id}_corr_params.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_corr_params.pdf')
     plt.close(fig)
     
     fig, axes = plt.subplots(
@@ -226,7 +226,7 @@ for exp_id in os.listdir('processed_data'):
     cbar = fig.colorbar(pcm, cax = caxes[0])
     cbar.set_label('$\\tau_{max}$ [$\\mu$s]')
             
-    plt.savefig(f'plots/{exp_id}/{exp_id}_vpol_params.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_vpol_params.pdf')
     plt.close(fig)
     
     # Read light profile data
@@ -302,5 +302,5 @@ for exp_id in os.listdir('processed_data'):
     ax[2, 0].plot(electron_dens_avg.coordinate('Device R')[0], electron_dens_avg.data, c = 'r')
     ax[2, 1].plot(electron_dens_avg.coordinate('Device R')[0], electron_dens_avg.data, c = 'r')
 
-    plt.savefig(f'plots/{exp_id}/{exp_id}_ccf_light_dens_spline.pdf')
+    plt.savefig(f'plots/allshots/taylor/highpass/{exp_id}/{exp_id}_ccf_light_dens_spline.pdf')
     plt.close(fig)

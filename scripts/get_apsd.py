@@ -1,7 +1,6 @@
 import gc
 import os
 import sys
-sys.path.append('/home/smarci/python_libs/')
 
 import numpy as np
 import matplotlib.pyplot as plt

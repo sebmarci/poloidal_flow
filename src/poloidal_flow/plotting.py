@@ -135,11 +135,11 @@ class CCFPlotter:
         # Plot raw CCF data with shaded error band
         ax.fill_between(
             time_lags, ccf.data - ccf.error, ccf.data + ccf.error,
-            color='C0', alpha=kwargs.get('error_alpha', 0.2)
+            color='tab:orange', alpha=kwargs.get('error_alpha', 0.2)
         )
         ax.plot(
             time_lags, ccf.data,
-            color='C0',
+            color='tab:orange',
             alpha=kwargs.get('alpha', 0.7),
             marker = 'o',
             ls = '--',
@@ -177,7 +177,7 @@ class CCFPlotter:
                     ts_par = np.linspace(time_lag_slice[0], time_lag_slice[-1], 200)
                     ax.plot(ts_par, parabolic_func(ts_par, *popt),
                            label='Parabola fit',
-                           color=kwargs.get('color', 'C1'),
+                           color='tab:green',
                            linewidth=kwargs.get('linewidth', 2))
                 title_str = (f'Channel {channel}, t = {time:.2f} s\n'
                              f'$\\tau$ = {tau_max:.2f} $\\pm$ {tau_err:.2f} $\\mu$s')
@@ -198,7 +198,12 @@ class CCFPlotter:
                         color='red',
                         linestyle='--',
                         alpha=0.5,
-                        linewidth=1)
+                        linewidth=2)
+            ax.axhline(ccf_max,
+                       color = 'grey',
+                       linestyle = '--',
+                       lw = 2
+                       )
 
             if method == 'parabola':
                 ax.errorbar(tau_max, ccf_max, xerr=tau_err,

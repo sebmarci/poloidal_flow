@@ -273,6 +273,22 @@ just wrong numbers — so they are worth remembering.
   numpy's own `argmax`/comparisons don't understand `ufloat`s. Extract
   `.nominal_value`/`.std_dev` (or `unumpy.nominal_values`/`unumpy.std_devs` for arrays)
   before handing a value to `fsolve`, `h5py.create_dataset`, or matplotlib.
+- **`xcorr_n_points_fit = 3` gives infinite errors unless `absolute_sigma=True`.** The
+  parabola `a*(x-x0)^2 + b` has 3 parameters, so a 3-point fit has zero degrees of
+  freedom. `curve_fit` defaults to `absolute_sigma=False`, which rescales the covariance
+  by `chi^2/(N-p)`; with `N == p` that is 0/0, so scipy emits only an `OptimizeWarning`
+  ("Covariance of the parameters could not be estimated") and fills `pcov` with `inf`.
+  Every `tau`, `corr`, `tau_0` and velocity error then comes out `inf` (seen in
+  `20250409.046_elliptical_3points.h5`: all `*_err` datasets 100% `inf`, nominal values
+  fine). Fitted parameters are the same either way; only `pcov` differs:
+  - `absolute_sigma=False` (default): `pcov = (J^T S^-1 J)^-1 * chi^2/(N-p)`. `sigma` is
+    only relative weights, the overall error scale is estimated from the residual scatter,
+    so the input error magnitude drops out.
+  - `absolute_sigma=True`: `pcov = (J^T S^-1 J)^-1`, no rescaling. `sigma` (the FLAP
+    subinterval scatter) is trusted as the real 1-sigma error, errors scale linearly with
+    it, and `N == p` works. The catch: a poor parabola fit no longer widens the error
+    bars, and underestimated FLAP errors (e.g. correlated subintervals) are not corrected.
+  Switching also changes 5-point errors, so they are not comparable to earlier results.
 
 ## Performance
 
